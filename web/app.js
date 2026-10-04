@@ -174,8 +174,7 @@ function showFrame() {
   frameInput.max = total;
   frameInput.value = view.frame;
   if (step) {
-    const tries = step.tries ? ` · took ${step.tries} ${step.tries === 1 ? "try" : "tries"}` : "";
-    frameLabel.textContent = `Choosing obstacle ${view.frame + 1} of ${total}${tries}`;
+    frameLabel.textContent = `Choosing obstacle ${view.frame + 1} of ${total}`;
   } else {
     const note = trace.note ? ` · ${trace.note}` : "";
     frameLabel.textContent = `Final board · ${total} obstacle${total === 1 ? "" : "s"}${note}`;

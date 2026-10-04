@@ -5,32 +5,18 @@ import (
 	"math"
 	"math/rand/v2"
 	"net/url"
-	"slices"
 	"strconv"
 	"strings"
 
 	"github.com/samtcifihi/obstacle-gen-playground/internal/board"
 )
 
-// Algorithms returns the available algorithms, in the order a UI should
-// offer them, with any defaults that depend on the board worked out for b.
-func Algorithms(b *board.Board) []Algorithm {
-	algs := []Algorithm{uniformAlgorithm, evolvedAlgorithm, tripleBetaAlgorithm}
-	for i, a := range algs {
-		params := slices.Clone(a.Params)
-		for j, p := range params {
-			if p.boardDefault != nil {
-				params[j].Default = p.boardDefault(b)
-			}
-		}
-		algs[i].Params = params
-	}
-	return algs
-}
+// All lists the available algorithms, in the order a UI should offer them.
+var All = []Algorithm{uniformAlgorithm, evolvedAlgorithm, tripleBetaAlgorithm}
 
-// Lookup returns the algorithm in algs with the given ID.
-func Lookup(algs []Algorithm, id string) (Algorithm, bool) {
-	for _, a := range algs {
+// Lookup returns the algorithm with the given ID.
+func Lookup(id string) (Algorithm, bool) {
+	for _, a := range All {
 		if a.ID == id {
 			return a, true
 		}
@@ -132,9 +118,6 @@ type Param struct {
 	// first whose condition holds applies, and while one does, this
 	// parameter can't be set directly.
 	Follows []Follow `json:"follows,omitempty"`
-
-	// boardDefault, if set, works out Default for a board.
-	boardDefault func(b *board.Board) any
 }
 
 // Follow makes a parameter take another's value while a condition holds.

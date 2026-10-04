@@ -32,22 +32,16 @@ func newHandler() http.Handler {
 	if err != nil {
 		panic(err)
 	}
-	s := &server{algorithms: algorithm.Algorithms(board.NewHexagon(boardEdgeLength))}
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /api/algorithms", s.handleAlgorithms)
-	mux.HandleFunc("GET /api/generate", s.handleGenerate)
+	mux.HandleFunc("GET /api/algorithms", handleAlgorithms)
+	mux.HandleFunc("GET /api/generate", handleGenerate)
 	mux.Handle("GET /", http.FileServerFS(static))
 	return mux
 }
 
-type server struct {
-	// algorithms has defaults worked out for the board generate uses.
-	algorithms []algorithm.Algorithm
-}
-
 // handleAlgorithms lists the algorithms and their parameters.
-func (s *server) handleAlgorithms(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, s.algorithms)
+func handleAlgorithms(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, algorithm.All)
 }
 
 // handleGenerate builds a board and places obstacles on it. Query
@@ -58,12 +52,12 @@ func (s *server) handleAlgorithms(w http.ResponseWriter, r *http.Request) {
 //
 // plus the algorithm's own parameters, which take their defaults if
 // omitted.
-func (s *server) handleGenerate(w http.ResponseWriter, r *http.Request) {
+func handleGenerate(w http.ResponseWriter, r *http.Request) {
 	query := r.URL.Query()
-	alg, ok := algorithm.Lookup(s.algorithms, query.Get("algorithm"))
+	alg, ok := algorithm.Lookup(query.Get("algorithm"))
 	if !ok {
-		ids := make([]string, len(s.algorithms))
-		for i, a := range s.algorithms {
+		ids := make([]string, len(algorithm.All))
+		for i, a := range algorithm.All {
 			ids[i] = a.ID
 		}
 		http.Error(w, "algorithm must be one of: "+strings.Join(ids, ", "), http.StatusBadRequest)

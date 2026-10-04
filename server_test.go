@@ -82,18 +82,13 @@ func TestGenerateTripleBeta(t *testing.T) {
 	if resp.Placed != 10 || countObstacles(resp.Board) != 10 {
 		t.Errorf("placed = %d with %d on the board, want 10", resp.Placed, countObstacles(resp.Board))
 	}
-	for _, step := range resp.Trace.Steps {
-		if step.Tries < 1 {
-			t.Errorf("step placing %v records %d tries", step.Placed, step.Tries)
-		}
-	}
 }
 
 func TestGenerateNothingEncodesEmptySteps(t *testing.T) {
 	for _, query := range []string{
 		"algorithm=uniform&n=0",
 		"algorithm=evolved&k_obstacles=0",
-		"algorithm=triple_beta&k_alpha_1=0.5",
+		"algorithm=triple_beta&k_alpha_1=0.5&is_inset=false",
 	} {
 		rec := get(t, "/api/generate?"+query)
 		if body := rec.Body.String(); !strings.Contains(body, `"steps":[]`) {
@@ -133,7 +128,6 @@ func TestGenerateRejectsBadParams(t *testing.T) {
 		"algorithm=evolved&k_beta=0",
 		"algorithm=evolved&f_edge_b=mode",
 		"algorithm=triple_beta&is_symmetric=false&k_beta_1=0",
-		"algorithm=triple_beta&k_max_tries=-1",
 	} {
 		if rec := get(t, "/api/generate?"+query); rec.Code != http.StatusBadRequest {
 			t.Errorf("GET /api/generate?%s: status %d, want %d", query, rec.Code, http.StatusBadRequest)

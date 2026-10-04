@@ -26,9 +26,6 @@ type Step struct {
 	Placed board.Hex `json:"placed"`
 	// Candidates are the cells the obstacle could have been placed on.
 	Candidates []Candidate `json:"candidates"`
-	// Tries is how many attempts placing the obstacle took, for algorithms
-	// that can miss.
-	Tries int `json:"tries,omitempty"`
 }
 
 // Candidate is a cell that could have been chosen, with a value for each of

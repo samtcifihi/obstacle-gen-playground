@@ -83,12 +83,13 @@ Uses three beta distributions as weights over the board's hexes, one for each
 cube coordinate (`q`, `r` and `s`, with `q + r + s = 0`, each from −R to R on a
 board of radius R):
 
-1. Scale each coordinate into [0, 1]: `x → (x/R + 1)/2`.
+1. Scale each coordinate into [0, 1]: `x → (x + R + ½)/(2R + 1)`, the middle of
+   its band, or with `is_inset` off, `x → (x/R + 1)/2` (see Edges below).
 2. Weight each hex by the product of the three beta densities at its scaled
    coordinates: `w = f_q(Q) · f_r(R') · f_s(S)`, using `k_alpha_1`/`k_beta_1`
    for `q`, `_2` for `r` and `_3` for `s`.
-3. Each try picks a hex of the board with probability `w / Σw`. It fails if the
-   hex already has an obstacle or would make a bank bigger than `k_max_bank`.
+3. Put the obstacle on a free hex (no obstacle, and not making a bank bigger
+   than `k_max_bank`), picked with probability `w / Σw` over the free hexes.
 
 Equal coordinate values form parallel bands across the board, so each
 distribution sets how much each band of one family is favoured:
@@ -104,17 +105,15 @@ symmetry. `is_symmetric` forces α = β for each axis, and `is_axes_shared` make
 axes 2 and 3 use axis 1's α and β. Forced values show locked, the same way as
 Evolved's `f_a'`.
 
-It stops after placing `k_obstacles` obstacles, after `k_max_tries` tries in
-all (successful or not; default twice the number of cells), or when no free
-cell has any weight. Failed tries don't get their own steps, but each step says
-how many tries it took. The heatmap's chances are exact.
+It stops after placing `k_obstacles` obstacles or when no free hex has any
+weight. The heatmap's chances are exact.
 
-**Edges.** A density of 0 at 0 or 1 (α or β > 1) gives the matching edge hexes
-no weight: with Beta(2, 2) on every axis, no perimeter hex can be chosen. A
-density with α or β < 1 is infinite at 0 or 1, which gives edge hexes infinite
-weight, so it won't place anything. `is_inset` fixes both: it scales each
-coordinate to the middle of its band, `(x + R + ½)/(2R + 1)`, so the edges sit
-just inside (0, 1).
+**Edges.** `is_inset` (on by default) scales each coordinate to the middle of
+its band, so the board's edges sit just inside (0, 1). With it off, they're at
+exactly 0 and 1. Then a density of 0 at 0 or 1 (α or β > 1) gives the matching
+edge hexes no weight: with Beta(2, 2) on every axis, no perimeter hex can be
+chosen. A density with α or β < 1 is infinite at 0 or 1, which gives edge hexes
+infinite weight, so with `is_inset` off it won't place anything.
 
 ## Running
 
@@ -161,8 +160,8 @@ generated board. Parameters that are left out take their defaults.
 ```
 
 The trace has one step per obstacle, in order. Each step lists the cells that
-could have been chosen, with one value per metric, and, for Triple Beta, how
-many tries it took. If the algorithm stopped early, `trace.note` says why.
+could have been chosen, with one value per metric. If the algorithm stopped
+early, `trace.note` says why.
 
 Cells use [axial coordinates](https://www.redblobgames.com/grids/hexagons/#coordinates-axial).
 The seed is a string because it can exceed JavaScript's safe integer range.

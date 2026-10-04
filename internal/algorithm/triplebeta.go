@@ -12,23 +12,20 @@ var tripleBetaAlgorithm = Algorithm{
 	ID:   "triple_beta",
 	Name: "Triple Beta",
 	Description: "Weights every hex by three beta densities, one for each cube coordinate (q, r, s), each " +
-		"scaled so the coordinate's range on the board runs from 0 to 1, multiplied together. Each try picks a " +
-		"hex with probability proportional to its weight. If it already has an obstacle or would make a bank " +
-		"too big, it tries again, up to k_max_tries tries in all.",
+		"scaled so the coordinate's range on the board runs from 0 to 1, multiplied together. Each obstacle goes " +
+		"on a free hex (no obstacle, and not making a bank too big) picked with probability proportional to its " +
+		"weight.",
 	Params: slices.Concat(
 		[]Param{
 			{Name: "k_obstacles", Group: "General", Type: Int, Default: 16,
 				Description: "The number of obstacles to place (if possible)"},
 			{Name: "k_max_bank", Group: "General", Type: Int, Default: 0,
 				Description: "Maximum contiguous group of obstacles allowed (0 = no limit)"},
-			{Name: "k_max_tries", Group: "General", Type: Int, Default: 0,
-				boardDefault: func(b *board.Board) any { return 2 * len(b.Cells) },
-				Description:  "Tries, successful or not, before giving up (default twice the number of cells on the board)"},
 			{Name: "is_symmetric", Group: "Distributions", Type: Bool, Default: true,
 				Description: "Force α = β for each distribution, so each is symmetric about the centre"},
 			{Name: "is_axes_shared", Group: "Distributions", Type: Bool, Default: true,
 				Description: "Force all 3 distributions to use axis 1's α and β"},
-			{Name: "is_inset", Group: "Distributions", Type: Bool, Default: false,
+			{Name: "is_inset", Group: "Distributions", Type: Bool, Default: true,
 				Description: "Scale each coordinate to the middle of its band, (x + R + ½)/(2R + 1), instead of " +
 					"(x/R + 1)/2, so the board's edges aren't at exactly 0 and 1. Keeps edge hexes possible when " +
 					"α or β > 1, and is needed when α or β < 1, whose density is infinite at 0 or 1"},
@@ -66,7 +63,6 @@ func tripleBetaConfig(v Values) TripleBetaConfig {
 	cfg := TripleBetaConfig{
 		Obstacles: v.Int("k_obstacles"),
 		MaxBank:   v.Int("k_max_bank"),
-		MaxTries:  v.Int("k_max_tries"),
 		Inset:     v.Bool("is_inset"),
 	}
 	for i := range cfg.Axes {
@@ -82,7 +78,6 @@ func tripleBetaConfig(v Values) TripleBetaConfig {
 type TripleBetaConfig struct {
 	Obstacles int  // k_obstacles
 	MaxBank   int  // k_max_bank; 0 means no limit
-	MaxTries  int  // k_max_tries
 	Inset     bool // is_inset
 	// Axes holds the shape of the distribution over each cube coordinate:
 	// q, r and s.
@@ -95,69 +90,53 @@ type BetaShape struct {
 }
 
 // TripleBeta places obstacles on b one at a time. Each cell has a fixed
-// weight (see hexWeights), and each try picks a cell of the board with
-// probability proportional to its weight. The try fails if that cell
-// already has an obstacle or one there would make a bank bigger than
-// MaxBank.
+// weight (see hexWeights), and each obstacle goes on a free cell, one
+// without an obstacle where one wouldn't make a bank bigger than MaxBank,
+// picked with probability proportional to its weight.
 //
-// It stops once it has placed cfg.Obstacles obstacles, used cfg.MaxTries
-// tries (successful or not), or no free cell has any weight. The trace has
-// a step for each obstacle placed, recording each cell that could have
-// taken it with its chances and weight.
+// It stops once it has placed cfg.Obstacles obstacles or no free cell has
+// any weight. The trace has a step for each obstacle placed, recording
+// each cell that could have taken it with its chance and weight.
 func TripleBeta(b *board.Board, cfg TripleBetaConfig, rng *rand.Rand) Trace {
 	g := grid{b: b, index: b.Index()}
 	weights := hexWeights(b, cfg.Axes, cfg.Inset)
 	trace := Trace{Metrics: tripleBetaMetrics}
-
-	total := 0.0
-	for _, w := range weights {
-		if !isFinite(w) {
-			trace.Note = "some hexes have infinite weight (a beta density with α or β below 1 is infinite at the " +
-				"board's edges); turn on is_inset"
-			return trace
-		}
-		total += w
+	if slices.ContainsFunc(weights, func(w float64) bool { return !isFinite(w) }) {
+		trace.Note = "some hexes have infinite weight (a beta density with α or β below 1 is infinite at the " +
+			"board's edges); turn on is_inset"
+		return trace
 	}
 
-	tries := 0
 	for len(trace.Steps) < cfg.Obstacles {
 		banks := g.banks()
-		free := func(i int) bool {
-			return !b.Cells[i].Obstacle && (cfg.MaxBank == 0 || banks.sizeWith(g, b.Cells[i].Hex) <= cfg.MaxBank)
-		}
 		var open []int
-		openWeight := 0.0
-		for i := range b.Cells {
-			if free(i) && weights[i] > 0 {
+		var openWeights []float64
+		openWeight, anyFree := 0.0, false
+		for i, c := range b.Cells {
+			if c.Obstacle || (cfg.MaxBank > 0 && banks.sizeWith(g, c.Hex) > cfg.MaxBank) {
+				continue
+			}
+			anyFree = true
+			if weights[i] > 0 {
 				open = append(open, i)
+				openWeights = append(openWeights, weights[i])
 				openWeight += weights[i]
 			}
 		}
 		if len(open) == 0 {
-			trace.Note = "no free cell has any weight"
+			trace.Note = "no free cell left"
+			if anyFree {
+				trace.Note = "no free cell has any weight"
+			}
 			break
 		}
 
-		pick, stepTries := -1, 0
-		for pick < 0 && tries < cfg.MaxTries {
-			tries++
-			stepTries++
-			if i := weightedIndex(rng, weights, total); free(i) {
-				pick = i
-			}
-		}
-		if pick < 0 {
-			trace.Note = fmt.Sprintf("gave up after %d tries", cfg.MaxTries)
-			break
-		}
+		pick := open[weightedIndex(rng, openWeights, openWeight)]
 		b.Cells[pick].Obstacle = true
 
-		step := Step{Placed: b.Cells[pick].Hex, Tries: stepTries, Candidates: make([]Candidate, len(open))}
+		step := Step{Placed: b.Cells[pick].Hex, Candidates: make([]Candidate, len(open))}
 		for j, i := range open {
-			step.Candidates[j] = Candidate{
-				Hex:    b.Cells[i].Hex,
-				Values: []float64{weights[i] / openWeight, weights[i] / total, weights[i]},
-			}
+			step.Candidates[j] = Candidate{Hex: b.Cells[i].Hex, Values: []float64{weights[i] / openWeight, weights[i]}}
 		}
 		trace.Steps = append(trace.Steps, step)
 	}
@@ -168,7 +147,6 @@ func TripleBeta(b *board.Board, cfg TripleBetaConfig, rng *rand.Rand) Trace {
 // could take an obstacle.
 var tripleBetaMetrics = []Metric{
 	{Name: "chance", Description: "Chance of getting this obstacle", Percent: true},
-	{Name: "landing", Description: "Chance a single try lands here", Percent: true},
 	{Name: "weight", Description: "Weight (product of the three densities)"},
 }
 

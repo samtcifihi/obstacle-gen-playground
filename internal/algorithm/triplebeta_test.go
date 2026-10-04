@@ -94,9 +94,9 @@ func TestWeightedIndexMatchesWeights(t *testing.T) {
 	}
 }
 
-func defaultTripleBetaConfig(t *testing.T, b *board.Board) TripleBetaConfig {
+func defaultTripleBetaConfig(t *testing.T) TripleBetaConfig {
 	t.Helper()
-	a, _ := Lookup(Algorithms(b), "triple_beta")
+	a, _ := Lookup("triple_beta")
 	v, err := a.Parse(nil)
 	if err != nil {
 		t.Fatal(err)
@@ -107,7 +107,7 @@ func defaultTripleBetaConfig(t *testing.T, b *board.Board) TripleBetaConfig {
 func TestTripleBetaPlacesObstacles(t *testing.T) {
 	for _, n := range []int{0, 1, 16, 40} {
 		b := board.NewHexagon(5)
-		cfg := defaultTripleBetaConfig(t, b)
+		cfg := defaultTripleBetaConfig(t)
 		cfg.Obstacles = n
 		trace := TripleBeta(b, cfg, newRNG(1))
 		if len(trace.Steps) != n || countObstacles(b) != n {
@@ -118,51 +118,67 @@ func TestTripleBetaPlacesObstacles(t *testing.T) {
 }
 
 func TestTripleBetaChancesAreExact(t *testing.T) {
-	// With flat distributions, every free cell has the same chance, and
-	// every cell the same chance per try.
+	// With flat distributions, every free cell has the same chance.
 	b := board.NewHexagon(5)
-	cfg := defaultTripleBetaConfig(t, b)
+	cfg := defaultTripleBetaConfig(t)
 	cfg.Obstacles = 5
 	trace := TripleBeta(b, cfg, newRNG(1))
 	for i, step := range trace.Steps {
 		for _, c := range step.Candidates {
-			if chance, landing := c.Values[0], c.Values[1]; math.Abs(chance-1/float64(61-i)) > 1e-12 || math.Abs(landing-1.0/61) > 1e-12 {
-				t.Fatalf("step %d: %v has chance %v and landing %v, want 1/%d and 1/61", i, c.Hex, chance, landing, 61-i)
+			if chance, weight := c.Values[0], c.Values[1]; math.Abs(chance-1/float64(61-i)) > 1e-12 || weight != 1 {
+				t.Fatalf("step %d: %v has chance %v and weight %v, want 1/%d and 1", i, c.Hex, chance, weight, 61-i)
 			}
 		}
 	}
 }
 
-func TestTripleBetaGivesUp(t *testing.T) {
+func TestTripleBetaFillsBoard(t *testing.T) {
 	b := board.NewHexagon(5)
-	cfg := defaultTripleBetaConfig(t, b)
-	cfg.Obstacles = 61
-	cfg.MaxTries = 50
+	cfg := defaultTripleBetaConfig(t)
+	cfg.Obstacles = 100
 	trace := TripleBeta(b, cfg, newRNG(1))
-	tries := 0
-	for _, s := range trace.Steps {
-		if s.Tries < 1 {
-			t.Errorf("step placing %v took %d tries", s.Placed, s.Tries)
-		}
-		tries += s.Tries
-	}
-	if tries > cfg.MaxTries {
-		t.Errorf("steps took %d tries in all, more than k_max_tries=%d", tries, cfg.MaxTries)
-	}
-	if len(trace.Steps) >= 50 || trace.Note != "gave up after 50 tries" {
-		t.Errorf("placed %d obstacles with note %q, want fewer than 50 and to give up", len(trace.Steps), trace.Note)
+	if len(trace.Steps) != 61 || trace.Note != "no free cell left" {
+		t.Errorf("placed %d obstacles with note %q, want all 61 and no free cell left", len(trace.Steps), trace.Note)
 	}
 	checkTrace(t, "triple beta", b, trace)
+}
+
+func TestTripleBetaFollowsWeights(t *testing.T) {
+	// Over many boards, each cell gets the first obstacle in proportion to
+	// its weight.
+	const runs = 20_000
+	cfg := defaultTripleBetaConfig(t)
+	cfg.Axes = [3]BetaShape{{2, 5}, {3, 3}, {1, 2}}
+	cfg.Obstacles = 1
+	b := board.NewHexagon(5)
+	index := b.Index()
+	weights := hexWeights(b, cfg.Axes, cfg.Inset)
+	total := 0.0
+	for _, w := range weights {
+		total += w
+	}
+	counts := make([]float64, len(weights))
+	rng := newRNG(4)
+	for range runs {
+		b := board.NewHexagon(5)
+		counts[index[TripleBeta(b, cfg, rng).Steps[0].Placed]]++
+	}
+	for i, w := range weights {
+		p := w / total
+		if got := counts[i] / runs; math.Abs(got-p) > 4*math.Sqrt(p*(1-p)/runs)+1e-4 {
+			t.Errorf("cell %v got the first obstacle %.4f of the time, want %.4f", b.Cells[i].Hex, got, p)
+		}
+	}
 }
 
 func TestTripleBetaZeroWeightCells(t *testing.T) {
 	// With Beta(2, 2) the perimeter has no weight, so only the 37 inner
 	// cells can be filled, and they're offered as the only candidates.
 	b := board.NewHexagon(5)
-	cfg := defaultTripleBetaConfig(t, b)
+	cfg := defaultTripleBetaConfig(t)
 	cfg.Axes = shapes(2, 2)
+	cfg.Inset = false
 	cfg.Obstacles = 61
-	cfg.MaxTries = 1_000_000
 	trace := TripleBeta(b, cfg, newRNG(1))
 	if len(trace.Steps) != 37 || trace.Note != "no free cell has any weight" {
 		t.Errorf("placed %d obstacles with note %q, want 37 and no weight left", len(trace.Steps), trace.Note)
@@ -181,7 +197,7 @@ func TestTripleBetaInfiniteWeights(t *testing.T) {
 	// α < 1 makes the density infinite at 0, so it needs is_inset.
 	for _, inset := range []bool{false, true} {
 		b := board.NewHexagon(5)
-		cfg := defaultTripleBetaConfig(t, b)
+		cfg := defaultTripleBetaConfig(t)
 		cfg.Axes = shapes(0.5, 0.5)
 		cfg.Inset = inset
 		trace := TripleBeta(b, cfg, newRNG(1))
@@ -193,10 +209,9 @@ func TestTripleBetaInfiniteWeights(t *testing.T) {
 
 func TestTripleBetaMaxBank(t *testing.T) {
 	b := board.NewHexagon(5)
-	cfg := defaultTripleBetaConfig(t, b)
+	cfg := defaultTripleBetaConfig(t)
 	cfg.Obstacles = 61
 	cfg.MaxBank = 1
-	cfg.MaxTries = 1_000_000
 	trace := TripleBeta(b, cfg, newRNG(2))
 	g := grid{b: b, index: b.Index()}
 	for bank, size := range g.banks().sizes {
@@ -204,7 +219,7 @@ func TestTripleBetaMaxBank(t *testing.T) {
 			t.Errorf("bank %d has %d obstacles", bank, size)
 		}
 	}
-	if trace.Note != "no free cell has any weight" {
+	if trace.Note != "no free cell left" {
 		t.Errorf("stopped with note %q, want no free cell left", trace.Note)
 	}
 	checkTrace(t, "triple beta", b, trace)
@@ -212,7 +227,7 @@ func TestTripleBetaMaxBank(t *testing.T) {
 
 func TestTripleBetaIsReproducible(t *testing.T) {
 	a, b := board.NewHexagon(5), board.NewHexagon(5)
-	cfg := defaultTripleBetaConfig(t, a)
+	cfg := defaultTripleBetaConfig(t)
 	cfg.Axes = [3]BetaShape{{2, 5}, {3, 3}, {1, 2}}
 	TripleBeta(a, cfg, newRNG(42))
 	TripleBeta(b, cfg, newRNG(42))

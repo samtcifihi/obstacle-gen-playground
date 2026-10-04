@@ -11,7 +11,7 @@ import (
 )
 
 func TestDefaultsAreValid(t *testing.T) {
-	for _, a := range Algorithms(board.NewHexagon(5)) {
+	for _, a := range All {
 		// Conditions and followed parameters must come earlier in the list,
 		// so Parse has their values by the time it needs them.
 		earlier := make(map[string]Param)
@@ -64,22 +64,8 @@ func TestDefaultsAreValid(t *testing.T) {
 	}
 }
 
-func TestBoardDefaults(t *testing.T) {
-	for _, edge := range []int{3, 5} {
-		b := board.NewHexagon(edge)
-		a, _ := Lookup(Algorithms(b), "triple_beta")
-		v, err := a.Parse(url.Values{})
-		if err != nil {
-			t.Fatal(err)
-		}
-		if got, want := v.Int("k_max_tries"), 2*len(b.Cells); got != want {
-			t.Errorf("edge length %d: k_max_tries defaults to %d, want %d", edge, got, want)
-		}
-	}
-}
-
 func TestParseFollows(t *testing.T) {
-	a, _ := Lookup(Algorithms(board.NewHexagon(5)), "triple_beta")
+	a, _ := Lookup("triple_beta")
 	parse := func(q url.Values) Values {
 		t.Helper()
 		v, err := a.Parse(q)
@@ -139,7 +125,7 @@ func TestOptionsHaveFuncs(t *testing.T) {
 }
 
 func TestRunWithDefaults(t *testing.T) {
-	for _, a := range Algorithms(board.NewHexagon(5)) {
+	for _, a := range All {
 		v, err := a.Parse(url.Values{})
 		if err != nil {
 			t.Fatalf("%s: %v", a.ID, err)
