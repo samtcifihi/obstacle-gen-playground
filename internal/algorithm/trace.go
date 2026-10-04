@@ -51,3 +51,31 @@ type Candidate struct {
 }
 
 var chanceMetric = Metric{Name: "chance", Description: "Chance of being chosen", Percent: true}
+
+// metricList describes the values an algorithm records for each candidate,
+// a T, pairing each metric with how to read its value from one, so the
+// metrics and the values can't get out of step.
+type metricList[T any] []metric[T]
+
+type metric[T any] struct {
+	Metric
+	value func(T) float64
+}
+
+// metrics returns the descriptions of the metrics, for Trace.Metrics.
+func (ms metricList[T]) metrics() []Metric {
+	described := make([]Metric, len(ms))
+	for i, m := range ms {
+		described[i] = m.Metric
+	}
+	return described
+}
+
+// values returns x's value for each metric, for Candidate.Values.
+func (ms metricList[T]) values(x T) []float64 {
+	values := make([]float64, len(ms))
+	for i, m := range ms {
+		values[i] = m.value(x)
+	}
+	return values
+}

@@ -93,14 +93,10 @@ type SplitConfig struct {
 // eligible. The trace has a step for each placement.
 func Split(b *board.Board, cfg SplitConfig, rng *rand.Rand) Trace {
 	g := grid{b: b, index: b.Index()}
-	trace := Trace{Metrics: splitMetrics}
-	type option struct {
-		cells  []int
-		values []float64 // in the order of splitMetrics, chance left at 0
-	}
+	trace := Trace{Metrics: splitMetrics.metrics()}
 	for placed := 0; placed < cfg.Obstacles; {
 		bs := g.banks()
-		var options []option
+		var options []splitOption
 		left := cfg.Obstacles - placed
 		for i, c := range b.Cells {
 			cells := []int{i}
@@ -150,9 +146,14 @@ func Split(b *board.Board, cfg SplitConfig, rng *rand.Rand) Trace {
 			if score == 0 {
 				score = 0 // not -0, which encodes as "-0"
 			}
-			options = append(options, option{
-				cells:  cells,
-				values: []float64{score, 0, raw, split, float64(adjacent[0]), float64(noise), float64(g.edgeDistance(h))},
+			options = append(options, splitOption{
+				cells:        cells,
+				score:        score,
+				raw:          raw,
+				split:        split,
+				adjacent:     adjacent[0],
+				noise:        noise,
+				edgeDistance: g.edgeDistance(h),
 			})
 		}
 		if len(options) == 0 {
@@ -165,11 +166,11 @@ func Split(b *board.Board, cfg SplitConfig, rng *rand.Rand) Trace {
 
 		best := math.Inf(-1)
 		for _, o := range options {
-			best = max(best, o.values[0])
+			best = max(best, o.score)
 		}
 		var top []int
 		for k, o := range options {
-			if o.values[0] == best {
+			if o.score == best {
 				top = append(top, k)
 			}
 		}
@@ -184,10 +185,10 @@ func Split(b *board.Board, cfg SplitConfig, rng *rand.Rand) Trace {
 			step.Also = append(step.Also, b.Cells[cell].Hex)
 		}
 		for _, o := range options {
-			values := slices.Clone(o.values)
-			if values[0] == best {
-				values[1] = 1 / float64(len(top))
+			if o.score == best {
+				o.chance = 1 / float64(len(top))
 			}
+			values := splitMetrics.values(o)
 			for _, cell := range o.cells {
 				step.Candidates = append(step.Candidates, Candidate{Hex: b.Cells[cell].Hex, Values: values})
 			}
@@ -197,14 +198,32 @@ func Split(b *board.Board, cfg SplitConfig, rng *rand.Rand) Trace {
 	return trace
 }
 
+// splitOption is a placement Split could make, and how it scores.
+type splitOption struct {
+	cells        []int // indexes into Board.Cells: one, or a symmetric pair
+	score        float64
+	chance       float64 // of being picked
+	raw          float64 // score before bucketing
+	split        float64
+	adjacent     int // obstacles it touches
+	noise        uint64
+	edgeDistance int
+}
+
 // splitMetrics are the values Split records for each cell of each eligible
 // placement.
-var splitMetrics = []Metric{
-	{Name: "score", Description: "Score (raw score ÷ k_score_bucket, rounded towards 0)", Integer: true},
-	{Name: "chance", Description: "Chance of being chosen", Percent: true},
-	{Name: "raw_score", Description: "Raw score (split − penalty + noise)"},
-	{Name: "split", Description: "Split (f_split_axes of each axis's shorter clear run)"},
-	{Name: "adjacent", Description: "Obstacles it would touch", Integer: true},
-	{Name: "noise", Description: "Noise", Integer: true},
-	{Name: "edge_distance", Description: "Cells between it and the edge", Integer: true},
+var splitMetrics = metricList[splitOption]{
+	{Metric{Name: "score", Description: "Score (raw score ÷ k_score_bucket, rounded towards 0)", Integer: true},
+		func(o splitOption) float64 { return o.score }},
+	{Metric{Name: "chance", Description: "Chance of being chosen", Percent: true},
+		func(o splitOption) float64 { return o.chance }},
+	{Metric{Name: "raw_score", Description: "Raw score (split − penalty + noise)"},
+		func(o splitOption) float64 { return o.raw }},
+	{Metric{Name: "split", Description: "Split (f_split_axes of each axis's shorter clear run)"},
+		func(o splitOption) float64 { return o.split }},
+	{Metric{Name: "adjacent", Description: "Obstacles it would touch", Integer: true},
+		func(o splitOption) float64 { return float64(o.adjacent) }},
+	{Metric{Name: "noise", Description: "Noise", Integer: true}, func(o splitOption) float64 { return float64(o.noise) }},
+	{Metric{Name: "edge_distance", Description: "Cells between it and the edge", Integer: true},
+		func(o splitOption) float64 { return float64(o.edgeDistance) }},
 }

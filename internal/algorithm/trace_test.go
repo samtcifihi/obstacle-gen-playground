@@ -3,6 +3,7 @@ package algorithm
 import (
 	"fmt"
 	"math"
+	"slices"
 	"testing"
 
 	"github.com/samtcifihi/obstacle-gen-playground/internal/board"
@@ -64,5 +65,19 @@ func TestTraces(t *testing.T) {
 		cfg.MaxBank = 2
 		b := board.NewHexagon(5)
 		checkTrace(t, fmt.Sprintf("evolved, weighted=%v", weighted), b, Evolved(b, cfg, newRNG(1)))
+	}
+}
+
+func TestMetricList(t *testing.T) {
+	type pair struct{ a, b float64 }
+	ms := metricList[pair]{
+		{Metric{Name: "a", Description: "A"}, func(p pair) float64 { return p.a }},
+		{Metric{Name: "b", Description: "B", Integer: true}, func(p pair) float64 { return p.b }},
+	}
+	if got, want := ms.metrics(), []Metric{{Name: "a", Description: "A"}, {Name: "b", Description: "B", Integer: true}}; !slices.Equal(got, want) {
+		t.Errorf("metrics() = %v, want %v", got, want)
+	}
+	if got := ms.values(pair{1.5, 2}); !slices.Equal(got, []float64{1.5, 2}) {
+		t.Errorf("values() = %v, want [1.5 2]", got)
 	}
 }

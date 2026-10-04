@@ -166,7 +166,7 @@ func Evolved(b *board.Board, cfg EvolvedConfig, rng *rand.Rand) Trace {
 	g := grid{b: b, index: b.Index()}
 	// A one-cell board has visibility 0, but then every distance is 0 too.
 	visibility := max(b.Visibility(), 1)
-	trace := Trace{Metrics: evolvedMetrics}
+	trace := Trace{Metrics: evolvedMetrics.metrics()}
 	for len(trace.Steps) < cfg.Obstacles {
 		var cells []scoredCell
 		for _, i := range g.freeCells(cfg.MaxBank) {
@@ -214,11 +214,8 @@ func Evolved(b *board.Board, cfg EvolvedConfig, rng *rand.Rand) Trace {
 
 		step := Step{Placed: b.Cells[pick].Hex, Candidates: make([]Candidate, len(cells))}
 		for i, chance := range chances {
-			c := cells[i]
-			step.Candidates[i] = Candidate{
-				Hex:    b.Cells[c.cell].Hex,
-				Values: []float64{c.score, chance, c.weight, c.obstacles, c.edge, c.noise},
-			}
+			cells[i].chance = chance
+			step.Candidates[i] = Candidate{Hex: b.Cells[cells[i].cell].Hex, Values: evolvedMetrics.values(cells[i])}
 		}
 		trace.Steps = append(trace.Steps, step)
 	}
@@ -226,13 +223,15 @@ func Evolved(b *board.Board, cfg EvolvedConfig, rng *rand.Rand) Trace {
 }
 
 // evolvedMetrics are the values Evolved records for each scored cell.
-var evolvedMetrics = []Metric{
-	{Name: "score", Description: "Score (steps 1–5)"},
-	chanceMetric,
-	{Name: "weight", Description: "Score after stretching or shifting (step 6)"},
-	{Name: "obstacles", Description: "Distance to obstacles term (step 3)"},
-	{Name: "edge", Description: "Distance to edge term (step 4)"},
-	{Name: "noise", Description: "Noise term (step 5)"},
+var evolvedMetrics = metricList[scoredCell]{
+	{Metric{Name: "score", Description: "Score (steps 1–5)"}, func(c scoredCell) float64 { return c.score }},
+	{chanceMetric, func(c scoredCell) float64 { return c.chance }},
+	{Metric{Name: "weight", Description: "Score after stretching or shifting (step 6)"},
+		func(c scoredCell) float64 { return c.weight }},
+	{Metric{Name: "obstacles", Description: "Distance to obstacles term (step 3)"},
+		func(c scoredCell) float64 { return c.obstacles }},
+	{Metric{Name: "edge", Description: "Distance to edge term (step 4)"}, func(c scoredCell) float64 { return c.edge }},
+	{Metric{Name: "noise", Description: "Noise term (step 5)"}, func(c scoredCell) float64 { return c.noise }},
 }
 
 // scoredCell is a cell that has a score in the current round.
@@ -241,6 +240,7 @@ type scoredCell struct {
 	obstacles, edge, noise float64 // terms from steps 3, 4 and 5
 	score                  float64 // their sum
 	weight                 float64 // score after step 6
+	chance                 float64 // of being picked
 }
 
 // stretch sets each cell's weight from its score, making every weight

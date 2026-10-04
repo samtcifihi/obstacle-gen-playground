@@ -181,7 +181,7 @@ func TripleBeta(b *board.Board, cfg TripleBetaConfig, rng *rand.Rand) Trace {
 	} else {
 		distance = newHexDistance(b, cfg.Distance)
 	}
-	trace := Trace{Metrics: slices.Concat(tripleBetaMetrics, distance.metrics())}
+	trace := Trace{Metrics: slices.Concat(tripleBetaMetrics.metrics(), distance.metrics())}
 	if slices.ContainsFunc(positions, notFinite) || !distance.finite() {
 		// Scaled coordinates and distances are never exactly 0 or 1, so only
 		// extreme shapes can get here, by overflowing.
@@ -189,11 +189,6 @@ func TripleBeta(b *board.Board, cfg TripleBetaConfig, rng *rand.Rand) Trace {
 		return trace
 	}
 
-	type option struct {
-		cell   int
-		weight float64
-		values []float64 // what distance records
-	}
 	for len(trace.Steps) < cfg.Obstacles {
 		var obstacles []board.Hex
 		for _, c := range b.Cells {
@@ -203,14 +198,14 @@ func TripleBeta(b *board.Board, cfg TripleBetaConfig, rng *rand.Rand) Trace {
 		}
 		distance.round(obstacles)
 
-		var options []option
+		var options []tripleBetaCandidate
 		var weights []float64
 		total := 0.0
 		free := g.freeCells(cfg.MaxBank)
 		for _, i := range free {
 			dw, values := distance.weigh(b.Cells[i].Hex)
 			if w := positions[i] * dw; w > 0 {
-				options = append(options, option{cell: i, weight: w, values: values})
+				options = append(options, tripleBetaCandidate{cell: i, weight: w, position: positions[i], distance: values})
 				weights = append(weights, w)
 				total += w
 			}
@@ -229,9 +224,10 @@ func TripleBeta(b *board.Board, cfg TripleBetaConfig, rng *rand.Rand) Trace {
 		step := Step{Placed: b.Cells[pick].Hex, Candidates: make([]Candidate, len(options))}
 		for j, chance := range weightedChances(weights, total) {
 			o := options[j]
+			o.chance = chance
 			step.Candidates[j] = Candidate{
 				Hex:    b.Cells[o.cell].Hex,
-				Values: append([]float64{chance, o.weight, positions[o.cell]}, o.values...),
+				Values: append(tripleBetaMetrics.values(o), o.distance...),
 			}
 		}
 		trace.Steps = append(trace.Steps, step)
@@ -239,12 +235,22 @@ func TripleBeta(b *board.Board, cfg TripleBetaConfig, rng *rand.Rand) Trace {
 	return trace
 }
 
+// tripleBetaCandidate is a cell TripleBeta could put an obstacle on.
+type tripleBetaCandidate struct {
+	cell                     int // index into Board.Cells
+	chance, weight, position float64
+	distance                 []float64 // what the distance term records
+}
+
 // tripleBetaMetrics are the values TripleBeta records for each cell that
 // could take an obstacle, followed by its distance term's.
-var tripleBetaMetrics = []Metric{
-	{Name: "chance", Description: "Chance of getting this obstacle", Percent: true},
-	{Name: "weight", Description: "Weight (position weight × distance weight)"},
-	{Name: "position", Description: "Position weight (product of the three axis densities)"},
+var tripleBetaMetrics = metricList[tripleBetaCandidate]{
+	{Metric{Name: "chance", Description: "Chance of getting this obstacle", Percent: true},
+		func(c tripleBetaCandidate) float64 { return c.chance }},
+	{Metric{Name: "weight", Description: "Weight (position weight × distance weight)"},
+		func(c tripleBetaCandidate) float64 { return c.weight }},
+	{Metric{Name: "position", Description: "Position weight (product of the three axis densities)"},
+		func(c tripleBetaCandidate) float64 { return c.position }},
 }
 
 // distanceTerm works out the distance weights of TripleBeta's cells.
@@ -278,20 +284,28 @@ func newHexDistance(b *board.Board, shape BetaShape) *hexDistance {
 	return t
 }
 
-var hexDistanceMetrics = []Metric{
-	{Name: "distance", Description: "Hex distance to the nearest obstacle (1 if adjacent)", Integer: true},
-	{Name: "distance_weight", Description: "Distance weight (density at the scaled distance)"},
+// hexDistanceValues is what hexDistance records for a cell.
+type hexDistanceValues struct {
+	between int // cells between it and the nearest obstacle
+	weight  float64
 }
 
-func (t *hexDistance) metrics() []Metric           { return hexDistanceMetrics }
+var hexDistanceMetrics = metricList[hexDistanceValues]{
+	// The weights count the cells between a hex and the nearest obstacle,
+	// but the trace shows the plain hex distance.
+	{Metric{Name: "distance", Description: "Hex distance to the nearest obstacle (1 if adjacent)", Integer: true},
+		func(v hexDistanceValues) float64 { return float64(v.between + 1) }},
+	{Metric{Name: "distance_weight", Description: "Distance weight (density at the scaled distance)"},
+		func(v hexDistanceValues) float64 { return v.weight }},
+}
+
+func (t *hexDistance) metrics() []Metric           { return hexDistanceMetrics.metrics() }
 func (t *hexDistance) finite() bool                { return !slices.ContainsFunc(t.weights, notFinite) }
 func (t *hexDistance) round(obstacles []board.Hex) { t.obstacles = obstacles }
 
 func (t *hexDistance) weigh(h board.Hex) (float64, []float64) {
 	d := nearestObstacle(h, t.obstacles, t.span)
-	// The weights count the cells between a hex and the nearest obstacle,
-	// but the trace shows the plain hex distance.
-	return t.weights[d], []float64{float64(d + 1), t.weights[d]}
+	return t.weights[d], hexDistanceMetrics.values(hexDistanceValues{between: d, weight: t.weights[d]})
 }
 
 // axisDistance is the per-axis distance term. It measures a cell against
@@ -326,18 +340,32 @@ func newAxisDistance(b *board.Board, shapes [3]BetaShape) *axisDistance {
 	return t
 }
 
-var axisDistanceMetrics = []Metric{
-	{Name: "distance_weight", Description: "Distance weight (product of the three axes' densities, for the " +
-		"nearest obstacle, or the mean over those equally near)"},
-	{Name: "q_distance", Description: "q distance: how far its q is from its nearest obstacle's (the mean, if several are as near)"},
-	{Name: "q_distance_weight", Description: "q distance weight (density at the scaled q distance, or the mean)"},
-	{Name: "r_distance", Description: "r distance: how far its r is from its nearest obstacle's (the mean, if several are as near)"},
-	{Name: "r_distance_weight", Description: "r distance weight (density at the scaled r distance, or the mean)"},
-	{Name: "s_distance", Description: "s distance: how far its s is from its nearest obstacle's (the mean, if several are as near)"},
-	{Name: "s_distance_weight", Description: "s distance weight (density at the scaled s distance, or the mean)"},
+// axisDistanceValues is what axisDistance records for a cell: means over
+// its nearest obstacles.
+type axisDistanceValues struct {
+	weight             float64
+	distances, weights [3]float64 // by axis
 }
 
-func (t *axisDistance) metrics() []Metric { return axisDistanceMetrics }
+var axisDistanceMetrics = func() metricList[axisDistanceValues] {
+	ms := metricList[axisDistanceValues]{
+		{Metric{Name: "distance_weight", Description: "Distance weight (product of the three axes' densities, for " +
+			"the nearest obstacle, or the mean over those equally near)"},
+			func(v axisDistanceValues) float64 { return v.weight }},
+	}
+	for axis, c := range []string{"q", "r", "s"} {
+		ms = append(ms,
+			metric[axisDistanceValues]{Metric{Name: c + "_distance", Description: c + " distance: how far its " + c +
+				" is from its nearest obstacle's (the mean, if several are as near)"},
+				func(v axisDistanceValues) float64 { return v.distances[axis] }},
+			metric[axisDistanceValues]{Metric{Name: c + "_distance_weight", Description: c +
+				" distance weight (density at the scaled " + c + " distance, or the mean)"},
+				func(v axisDistanceValues) float64 { return v.weights[axis] }})
+	}
+	return ms
+}()
+
+func (t *axisDistance) metrics() []Metric { return axisDistanceMetrics.metrics() }
 
 func (t *axisDistance) finite() bool {
 	for _, weights := range t.weights {
@@ -351,16 +379,16 @@ func (t *axisDistance) finite() bool {
 func (t *axisDistance) round(obstacles []board.Hex) { t.obstacles = obstacles }
 
 func (t *axisDistance) weigh(h board.Hex) (float64, []float64) {
-	values := make([]float64, 7)
 	if len(t.obstacles) == 0 {
 		// Every coordinate is as far as can be, but the term is left out,
 		// as the same factor on every cell would change nothing, unless it
 		// rounded down to 0.
-		values[0] = 1
-		for axis := range 3 {
-			values[1+2*axis], values[2+2*axis] = float64(2*t.radius), 1
-		}
-		return 1, values
+		far := float64(2 * t.radius)
+		return 1, axisDistanceMetrics.values(axisDistanceValues{
+			weight:    1,
+			distances: [3]float64{far, far, far},
+			weights:   [3]float64{1, 1, 1},
+		})
 	}
 
 	// The q, r and s distances to each of the nearest obstacles.
@@ -379,23 +407,23 @@ func (t *axisDistance) weigh(h board.Hex) (float64, []float64) {
 	}
 	slices.SortFunc(t.nearest, func(a, b [3]int) int { return slices.Compare(a[:], b[:]) })
 
-	weight := 0.0
+	var v axisDistanceValues
 	for _, ds := range t.nearest {
 		w := 1.0
 		for axis, d := range ds {
 			w *= t.weights[axis][d]
-			values[1+2*axis] += float64(d)
-			values[2+2*axis] += t.weights[axis][d]
+			v.distances[axis] += float64(d)
+			v.weights[axis] += t.weights[axis][d]
 		}
-		weight += w
+		v.weight += w
 	}
 	n := float64(len(t.nearest))
-	weight /= n
-	values[0] = weight
-	for i := 1; i < len(values); i++ {
-		values[i] /= n
+	v.weight /= n
+	for axis := range 3 {
+		v.distances[axis] /= n
+		v.weights[axis] /= n
 	}
-	return weight, values
+	return v.weight, axisDistanceMetrics.values(v)
 }
 
 // nearestObstacle returns the number of cells between h and the nearest of
