@@ -379,3 +379,7 @@ was made, as in [Saving and sharing settings](#saving-and-sharing-settings).
 
 Cells use [axial coordinates](https://www.redblobgames.com/grids/hexagons/#coordinates-axial).
 The seed is a string because it can exceed JavaScript's safe integer range.
+
+## License
+
+[MIT](LICENSE).
