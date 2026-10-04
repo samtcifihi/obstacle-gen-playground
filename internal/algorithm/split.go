@@ -13,7 +13,7 @@ var splitAlgorithm = Algorithm{
 	Name: "Split",
 	Description: "Places obstacles greedily where they best break up long clear lines across the board. Each " +
 		"round, every eligible hex scores how evenly it splits the clear line along each axis, less a penalty " +
-		"for touching obstacles, plus a little noise. Scores are rounded down into buckets, and the obstacle " +
+		"for touching obstacles, plus a little noise. Scores are rounded into buckets, and the obstacle " +
 		"goes on a random hex among the best.",
 	Params: []Param{
 		{Name: "k_obstacles", Group: "General", Type: Int, Default: 16,
@@ -21,8 +21,8 @@ var splitAlgorithm = Algorithm{
 		{Name: "k_max_bank", Group: "General", Type: Int, Default: 0,
 			Description: "Maximum contiguous group of obstacles allowed (0 = no limit)"},
 		{Name: "is_symmetric", Group: "General", Type: Bool, Default: true,
-			Description: "Place obstacles in pairs, each the other rotated 180° about the centre, plus the centre " +
-				"on its own when the count is odd"},
+			Description: "Place obstacles in pairs, each the other rotated 180° about the centre, except the " +
+				"centre itself, which is placed on its own"},
 		{Name: "k_edge_margin", Group: "Eligibility", Type: Int, Default: 1,
 			Description: "Fewest cells allowed between an obstacle and the edge (0 allows the perimeter)"},
 		{Name: "k_max_adjacent", Group: "Eligibility", Type: Int, Default: 1,
@@ -35,7 +35,7 @@ var splitAlgorithm = Algorithm{
 		{Name: "k_noise", Group: "Score", Type: Int, Default: 1,
 			Description: "Adds a random whole number from 0 to this to each score"},
 		{Name: "k_score_bucket", Group: "Score", Type: Int, Default: 2, Min: 1,
-			Description: "Scores are divided by this and rounded down, so close scores tie and are picked between " +
+			Description: "Scores are divided by this and rounded towards 0, so close scores tie and are picked between " +
 				"at random"},
 	},
 	run: func(b *board.Board, v Values, rng *rand.Rand) Trace {
@@ -71,13 +71,10 @@ type SplitConfig struct {
 // 180° rotation about the centre (or the centre on its own). A placement
 // is eligible if none of its cells has fewer than EdgeMargin cells between
 // it and the edge, and with its obstacles added, none touches more than
-// MaxAdjacent obstacles and no bank is bigger than MaxBank (if set). It
-// must also leave a count that can still be finished: with Symmetric,
-// pairs keep the number left to place odd or even, so the centre is only
-// eligible while an odd number are left, and a pair only while two or more
-// are. While an odd number are left and the centre is eligible, it's the
-// only choice, so an odd count takes the centre first rather than risk it
-// becoming ineligible.
+// MaxAdjacent obstacles and no bank is bigger than MaxBank (if set). A
+// pair is only eligible while two or more obstacles are left to place, so
+// it never places more than cfg.Obstacles, but the centre can leave an odd
+// number for the pairs, in which case it stops one short.
 //
 // An eligible placement is scored from one of its cells (on a symmetric
 // board, both score the same):
@@ -86,7 +83,7 @@ type SplitConfig struct {
 //	        either way along axis i: the empty cells before an obstacle or
 //	        the edge
 //	raw   = split − AdjacentPenalty × (obstacles it touches) + U{0, …, Noise}
-//	score = ⌊raw / ScoreBucket⌋
+//	score = raw / ScoreBucket, rounded towards 0 like Java's integer division
 //
 // and the obstacles go on a random placement among those with the top
 // score. It stops once it has placed cfg.Obstacles obstacles or nothing is
@@ -102,7 +99,6 @@ func Split(b *board.Board, cfg SplitConfig, rng *rand.Rand) Trace {
 		bs := g.banks()
 		var options []option
 		left := cfg.Obstacles - placed
-		centre := -1 // index into options of the one-cell centre placement
 		for i, c := range b.Cells {
 			cells := []int{i}
 			if cfg.Symmetric {
@@ -114,7 +110,7 @@ func Split(b *board.Board, cfg SplitConfig, rng *rand.Rand) Trace {
 					cells = append(cells, j)
 				}
 			}
-			if len(cells) > left || (cfg.Symmetric && len(cells) == 1 && left%2 == 0) {
+			if len(cells) > left {
 				continue
 			}
 			hexes := make([]board.Hex, len(cells))
@@ -145,24 +141,21 @@ func Split(b *board.Board, cfg SplitConfig, rng *rand.Rand) Trace {
 				splits = append(splits, float64(min(g.run(h, axis[0]), g.run(h, axis[1]))))
 			}
 			split := cfg.SplitAxes(splits)
-			noise := rng.IntN(cfg.Noise + 1)
+			noise := rng.Uint64N(uint64(cfg.Noise) + 1)
 			raw := split - cfg.AdjacentPenalty*float64(adjacent[0]) + float64(noise)
-			score := math.Floor(raw / float64(cfg.ScoreBucket))
-			if cfg.Symmetric && len(cells) == 1 {
-				centre = len(options)
+			score := math.Trunc(raw / float64(cfg.ScoreBucket))
+			if score == 0 {
+				score = 0 // not -0, which encodes as "-0"
 			}
 			options = append(options, option{
 				cells:  cells,
 				values: []float64{score, 0, raw, split, float64(adjacent[0]), float64(noise), float64(g.edgeDistance(h))},
 			})
 		}
-		if centre >= 0 {
-			options = options[centre : centre+1]
-		}
 		if len(options) == 0 {
 			trace.Note = "no eligible placement left"
 			if cfg.Symmetric && left == 1 {
-				trace.Note = "the last obstacle needs the centre, which isn't eligible"
+				trace.Note = "only the centre could take the last obstacle, and it isn't eligible"
 			}
 			break
 		}
@@ -204,7 +197,7 @@ func Split(b *board.Board, cfg SplitConfig, rng *rand.Rand) Trace {
 // splitMetrics are the values Split records for each cell of each eligible
 // placement.
 var splitMetrics = []Metric{
-	{Name: "score", Description: "Score (raw score ÷ k_score_bucket, rounded down)", Integer: true},
+	{Name: "score", Description: "Score (raw score ÷ k_score_bucket, rounded towards 0)", Integer: true},
 	{Name: "chance", Description: "Chance of being chosen", Percent: true},
 	{Name: "raw_score", Description: "Raw score (split − penalty + noise)"},
 	{Name: "split", Description: "Split (f_split_axes of each axis's shorter clear run)"},

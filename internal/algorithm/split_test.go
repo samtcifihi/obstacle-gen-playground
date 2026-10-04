@@ -63,7 +63,8 @@ func TestSplitScores(t *testing.T) {
 }
 
 func TestSplitScoreFormula(t *testing.T) {
-	// raw = split − penalty × adjacent + noise; score = ⌊raw / bucket⌋.
+	// raw = split − penalty × adjacent + noise; score = raw / bucket, rounded
+	// towards 0.
 	cfg := defaultSplitConfig(t)
 	cfg.Obstacles, cfg.Symmetric, cfg.AdjacentPenalty, cfg.Noise, cfg.ScoreBucket = 1, false, 1.5, 3, 3
 	cfg.SplitAxes = aggregateFuncs["mean"]
@@ -72,7 +73,7 @@ func TestSplitScoreFormula(t *testing.T) {
 	trace := Split(b, cfg, newRNG(2))
 	for h, v := range candidateValues(t, trace, 0) {
 		raw := v["split"] - 1.5*v["adjacent"] + v["noise"]
-		if math.Abs(v["raw_score"]-raw) > 1e-12 || v["score"] != math.Floor(raw/3) {
+		if math.Abs(v["raw_score"]-raw) > 1e-12 || v["score"] != math.Trunc(raw/3) || math.Signbit(v["score"]) && v["score"] == 0 {
 			t.Errorf("%v: %v doesn't follow the formula", h, v)
 		}
 		if v["noise"] < 0 || v["noise"] > 3 || v["noise"] != math.Trunc(v["noise"]) {
@@ -98,22 +99,35 @@ func TestSplitSymmetric(t *testing.T) {
 			cfg := defaultSplitConfig(t)
 			cfg.Obstacles = n
 			trace := Split(b, cfg, newRNG(seed))
-			centre := b.Cells[b.Index()[board.Hex{}]].Obstacle
-			if trace.Placed() != n || countObstacles(b) != n || !isSymmetric(b) || centre != (n%2 == 1) {
-				t.Errorf("k_obstacles=%d, seed %d: placed %d (%d on the board), symmetric %v, centre %v; note %q",
-					n, seed, trace.Placed(), countObstacles(b), isSymmetric(b), centre, trace.Note)
+			placed := trace.Placed()
+			if placed > n || placed != countObstacles(b) || !isSymmetric(b) || (placed < n) == (trace.Note == "") {
+				t.Errorf("k_obstacles=%d, seed %d: placed %d (%d on the board), symmetric %v; note %q",
+					n, seed, placed, countObstacles(b), isSymmetric(b), trace.Note)
+			}
+			// Each step places a pair, or the centre on its own.
+			for i, step := range trace.Steps {
+				centre := step.Placed == (board.Hex{})
+				if centre != (len(step.Also) == 0) || (!centre && step.Also[0] != (board.Hex{Q: -step.Placed.Q, R: -step.Placed.R})) {
+					t.Errorf("k_obstacles=%d, seed %d: step %d placed %v and %v", n, seed, i, step.Placed, step.Also)
+				}
 			}
 		}
 	}
 }
 
-func TestSplitOddCountTakesCentreFirst(t *testing.T) {
+func TestSplitEvenCountCanUseCentre(t *testing.T) {
+	// With no noise or bucketing, the centre has the best split on an empty
+	// board, so it goes first, on its own. That leaves an odd number for
+	// the pairs, so an even count ends one short.
 	b := board.NewHexagon(6)
 	cfg := defaultSplitConfig(t)
-	cfg.Obstacles = 7
-	trace := Split(b, cfg, newRNG(4))
-	if first := trace.Steps[0]; first.Placed != (board.Hex{}) || len(first.Also) != 0 || len(first.Candidates) != 1 {
-		t.Errorf("first step placed %v and %v from %d candidates, want the centre alone", first.Placed, first.Also, len(first.Candidates))
+	cfg.Noise, cfg.ScoreBucket = 0, 1
+	trace := Split(b, cfg, newRNG(1))
+	if first := trace.Steps[0]; first.Placed != (board.Hex{}) || len(first.Also) != 0 {
+		t.Errorf("first step placed %v and %v, want the centre alone", first.Placed, first.Also)
+	}
+	if trace.Placed() != 15 || trace.Note != "only the centre could take the last obstacle, and it isn't eligible" {
+		t.Errorf("placed %d with note %q, want 15 and the centre note", trace.Placed(), trace.Note)
 	}
 }
 
@@ -124,7 +138,7 @@ func TestSplitCentreUnavailable(t *testing.T) {
 	cfg := defaultSplitConfig(t)
 	cfg.Obstacles = 3
 	trace := Split(b, cfg, newRNG(1))
-	if trace.Placed() != 2 || trace.Note != "the last obstacle needs the centre, which isn't eligible" {
+	if trace.Placed() != 2 || trace.Note != "only the centre could take the last obstacle, and it isn't eligible" {
 		t.Errorf("placed %d with note %q, want 2 and the centre note", trace.Placed(), trace.Note)
 	}
 }
@@ -281,6 +295,25 @@ func TestSizeWithAll(t *testing.T) {
 	} {
 		if got := bs.sizeWithAll(g, tt.hs); got != tt.want {
 			t.Errorf("sizeWithAll(%v) = %d, want %d", tt.hs, got, tt.want)
+		}
+	}
+}
+
+func TestSplitRoundsTowardsZero(t *testing.T) {
+	// (2, 0) touches an obstacle at (1, 0), so its shortest run, and with
+	// min its split, is 0, and its raw score is minus the penalty.
+	for _, tt := range []struct{ penalty, score float64 }{
+		{1, 0},  // -1/2 rounds to 0, not -1, and isn't -0
+		{3, -1}, // -3/2 rounds to -1, not -2
+	} {
+		b := board.NewHexagon(6)
+		b.Cells[b.Index()[board.Hex{Q: 1}]].Obstacle = true
+		cfg := defaultSplitConfig(t)
+		cfg.Obstacles, cfg.Symmetric, cfg.EdgeMargin, cfg.Noise = 1, false, 0, 0
+		cfg.SplitAxes, cfg.AdjacentPenalty = aggregateFuncs["min"], tt.penalty
+		v := candidateValues(t, Split(b, cfg, newRNG(1)), 0)[board.Hex{Q: 2}]
+		if v["raw_score"] != -tt.penalty || v["score"] != tt.score || math.Signbit(v["score"]) && tt.score == 0 {
+			t.Errorf("penalty %v: raw %v, score %v, want raw %v and score %v", tt.penalty, v["raw_score"], v["score"], -tt.penalty, tt.score)
 		}
 	}
 }

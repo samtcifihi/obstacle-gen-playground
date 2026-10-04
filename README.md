@@ -170,7 +170,7 @@ it splits a long clear line evenly. Then:
 ```text
 split = f_split_axes(s₁, s₂, s₃)           max is the original
 raw   = split − k_adjacent_penalty × (obstacles touched) + U{0, …, k_noise}
-score = ⌊raw / k_score_bucket⌋
+score = raw / k_score_bucket, rounded towards 0
 ```
 
 The obstacle goes on a random placement among those with the top score.
@@ -178,15 +178,17 @@ The obstacle goes on a random placement among those with the top score.
 line-break, `mean` rewards being useful along several axes, `median` wants at
 least two good axes, and `min` wants every axis broken up. `k_score_bucket`
 sets how picky it is: 1 makes every point count, 2 is the original, and larger
-buckets make more hexes tie, so more is left to chance. The defaults reproduce
-the original, apart from rounding down negative raw scores where Java's
-integer division rounds towards 0.
+buckets make more hexes tie, so more is left to chance. Scores round towards 0,
+like Java's integer division, so with the default bucket of 2 a raw score of −1
+ties with 0 and 1. The defaults reproduce the original.
 
 **Symmetry.** With `is_symmetric`, each step places a pair, both scored the
-same, as the board stays symmetric. The centre is its own pair of one, so it's
-only eligible while an odd number of obstacles are left to place. An odd count
-takes the centre first, if it's eligible, and an even count never uses it, so
-the count comes out exact whenever there's room.
+same, as the board stays symmetric. The centre is its own rotation, so taking
+it places a single obstacle. A pair isn't placed when only one obstacle is left,
+so it never places more than `k_obstacles`, and it stops early, with a note, if
+nothing is eligible. In particular, if the centre is taken (it often is, having
+the best split on an empty board), an even count ends one short, and otherwise
+an odd count does.
 
 ## Running
 

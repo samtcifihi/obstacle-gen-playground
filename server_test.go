@@ -117,11 +117,11 @@ func TestGenerateEdgeLength(t *testing.T) {
 func TestGenerateSplitCountsObstacles(t *testing.T) {
 	// With is_symmetric, steps place pairs, but placed counts obstacles.
 	resp := generate(t, "algorithm=split&k_obstacles=16&seed=3")
-	if resp.Placed != 16 || countObstacles(resp.Board) != 16 {
-		t.Errorf("placed = %d with %d on the board, want 16", resp.Placed, countObstacles(resp.Board))
+	if resp.Placed < 15 || resp.Placed != countObstacles(resp.Board) {
+		t.Errorf("placed = %d with %d on the board, want them equal and 15 or 16", resp.Placed, countObstacles(resp.Board))
 	}
-	if len(resp.Trace.Steps) >= 16 {
-		t.Errorf("trace has %d steps, want fewer than 16 as most place a pair", len(resp.Trace.Steps))
+	if len(resp.Trace.Steps) >= resp.Placed {
+		t.Errorf("trace has %d steps for %d obstacles, want fewer as most place a pair", len(resp.Trace.Steps), resp.Placed)
 	}
 }
 
