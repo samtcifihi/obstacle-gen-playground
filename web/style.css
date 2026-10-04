@@ -173,6 +173,14 @@ select {
   width: 10em;
 }
 
+.param select.derived:disabled {
+  opacity: 1;
+  border-style: dashed;
+  background: transparent;
+  color: inherit;
+  cursor: default;
+}
+
 .param input[type="checkbox"] {
   width: 18px;
   height: 18px;

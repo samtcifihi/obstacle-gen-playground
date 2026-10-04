@@ -56,8 +56,19 @@ It stops after placing `k_obstacles` obstacles or when no cell has a score.
 grouped by axis, to one number. Flattened, that's
 `f_a'(f_b(f_a(a), …, f_a(f)))`. Otherwise it's
 `f_a'(f_dir(f_b(f_a(a), f_a(b)), f_b(f_a(c), f_a(d)), f_b(f_a(e), f_a(f))))`.
-With `f_a'` the inverse of `f_a`, this is a generalised mean: the defaults
-(`2 root`, `mean`, `2 ^`) give the power mean with exponent ½.
+`f_a'` is always the inverse of `f_a`, so it's set automatically and only
+shown for reference. That makes the conjugate a generalised mean: the defaults
+(`2 root`, `mean`, `2 ^`) give the power mean with exponent ½, and `ln`, `mean`,
+`e x ^` gives the geometric mean.
+
+- `f_a` (and so `f_a'`): `2 root` ↔ `2 ^`, `T f -> T :: x` (identity),
+  `ln` ↔ `e x ^`
+- `f_b` and `f_dir`: `mean`, `geom_mean`, `harm_mean`, `median`, `max`, `min`
+
+`ln 0` is −∞, so with `ln` a distance of 0 usually pulls the result to 0. Some
+combinations, like `ln` then `geom_mean` (which multiplies −∞ by 0), are
+undefined for some distances. A cell whose distance term comes out undefined
+or infinite has no score for that round, and shows as "can't be chosen".
 
 **Visibility** is the furthest distance from the board's centre cell to the
 edge of an empty board, counted in the cells between them, the same way steps 3

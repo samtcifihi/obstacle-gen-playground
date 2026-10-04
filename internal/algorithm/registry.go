@@ -45,6 +45,9 @@ func (a Algorithm) Run(b *board.Board, v Values, rng *rand.Rand) Trace {
 func (a Algorithm) Parse(q url.Values) (Values, error) {
 	v := make(Values, len(a.Params))
 	for _, p := range a.Params {
+		if p.InverseOf != "" {
+			continue
+		}
 		if !q.Has(p.Name) {
 			v[p.Name] = p.Default
 			continue
@@ -55,7 +58,29 @@ func (a Algorithm) Parse(q url.Values) (Values, error) {
 		}
 		v[p.Name] = value
 	}
+	// Parameters that mirror another can't be set directly.
+	for _, p := range a.Params {
+		if p.InverseOf != "" {
+			v[p.Name] = a.inverse(p.InverseOf, v.Choice(p.InverseOf))
+		}
+	}
 	return v, nil
+}
+
+// inverse returns the inverse of option value of the Choice parameter
+// named param.
+func (a Algorithm) inverse(param, value string) string {
+	for _, p := range a.Params {
+		if p.Name != param {
+			continue
+		}
+		for _, o := range p.Options {
+			if o.Value == value {
+				return o.Inverse
+			}
+		}
+	}
+	panic(fmt.Sprintf("%s: parameter %s has no option %q", a.ID, param, value))
 }
 
 // ParamType is the kind of value a parameter takes.
@@ -85,12 +110,18 @@ type Param struct {
 	// OnlyIf names a Bool parameter that must be true for this one to have
 	// any effect, or false if the name is prefixed with "!".
 	OnlyIf string `json:"onlyIf,omitempty"`
+	// InverseOf names a Choice parameter that this one mirrors: its value is
+	// always the Inverse of that parameter's option, and can't be set.
+	InverseOf string `json:"inverseOf,omitempty"`
 }
 
 // Option is one value of a Choice parameter.
 type Option struct {
 	Value string `json:"value"`
 	Label string `json:"label"`
+	// Inverse is the value of the option that undoes this one, for
+	// parameters that mirror this one with InverseOf.
+	Inverse string `json:"inverse,omitempty"`
 }
 
 func (p Param) parse(s string) (any, error) {

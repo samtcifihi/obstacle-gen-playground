@@ -284,6 +284,11 @@ function paramInput(alg, param) {
   }
   input.id = `param-${alg.id}-${param.name}`;
   input.name = param.name;
+  if (param.inverseOf) {
+    // Shown for reference; it always follows the parameter it inverts.
+    input.disabled = true;
+    input.classList.add("derived");
+  }
   return input;
 }
 
@@ -330,24 +335,29 @@ function buildPanel(alg, initial) {
   }
   const panel = { alg, element, inputs };
   element.addEventListener("change", () => {
-    updateActive(panel);
+    updateDependents(panel);
     generate();
   });
-  updateActive(panel);
+  updateDependents(panel);
   return panel;
 }
 
-// updateActive disables parameters whose onlyIf condition doesn't hold.
-function updateActive(panel) {
+// updateDependents disables parameters whose onlyIf condition doesn't hold
+// and sets each inverseOf parameter to the inverse of the one it follows.
+function updateDependents(panel) {
+  const params = new Map(panel.alg.params.map((p) => [p.name, p]));
   for (const param of panel.alg.params) {
-    if (!param.onlyIf) {
-      continue;
-    }
-    const negated = param.onlyIf.startsWith("!");
-    const flag = panel.inputs.get(param.onlyIf.replace(/^!/, "")).checked;
     const input = panel.inputs.get(param.name);
-    input.disabled = flag === negated;
-    input.closest(".param").classList.toggle("inactive", input.disabled);
+    if (param.onlyIf) {
+      const negated = param.onlyIf.startsWith("!");
+      const flag = panel.inputs.get(param.onlyIf.replace(/^!/, "")).checked;
+      input.disabled = flag === negated;
+      input.closest(".param").classList.toggle("inactive", input.disabled);
+    }
+    if (param.inverseOf) {
+      const value = panel.inputs.get(param.inverseOf).value;
+      input.value = params.get(param.inverseOf).options.find((o) => o.value === value)?.inverse ?? "";
+    }
   }
 }
 
@@ -365,7 +375,10 @@ function query() {
   const { alg, inputs } = currentPanel();
   const params = new URLSearchParams({ algorithm: alg.id });
   for (const param of alg.params) {
-    params.set(param.name, getValue(inputs.get(param.name), param));
+    // The server works out inverseOf parameters itself.
+    if (!param.inverseOf) {
+      params.set(param.name, getValue(inputs.get(param.name), param));
+    }
   }
   const seed = seedInput.value.trim();
   if (seed !== "") {

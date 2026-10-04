@@ -55,8 +55,8 @@ func conjugateParams(term, group string) []Param {
 			Description: "The second function of the conjugate"},
 		{Name: "f_" + term + "_dir", Group: group, Type: Choice, Default: "mean", Options: aggregateOptions, OnlyIf: "!" + flattened,
 			Description: "Converts the 3 axes to a single number"},
-		{Name: "f_" + term + "_a'", Group: group, Type: Choice, Default: "square", Options: scalarOptions,
-			Description: "The third function of the conjugate (should be the inverse of the first)"},
+		{Name: "f_" + term + "_a'", Group: group, Type: Choice, Default: "square", Options: scalarOptions, InverseOf: "f_" + term + "_a",
+			Description: "The third function of the conjugate: the inverse of the first, set automatically"},
 	}
 }
 
@@ -85,20 +85,26 @@ func evolvedConfig(v Values) EvolvedConfig {
 }
 
 var scalarOptions = []Option{
-	{Value: "sqrt", Label: "2 root"},
-	{Value: "square", Label: "2 ^"},
-	{Value: "identity", Label: "T f -> T :: x"},
+	{Value: "sqrt", Label: "2 root", Inverse: "square"},
+	{Value: "square", Label: "2 ^", Inverse: "sqrt"},
+	{Value: "identity", Label: "T f -> T :: x", Inverse: "identity"},
+	{Value: "ln", Label: "ln", Inverse: "exp"},
+	{Value: "exp", Label: "e x ^", Inverse: "ln"},
 }
 
 var scalarFuncs = map[string]func(float64) float64{
 	"sqrt":     math.Sqrt,
 	"square":   func(x float64) float64 { return x * x },
 	"identity": func(x float64) float64 { return x },
+	"ln":       math.Log, // ln 0 is -Inf, which e^x maps back to 0
+	"exp":      math.Exp,
 }
 
 var aggregateOptions = []Option{
 	{Value: "mean", Label: "mean"},
 	{Value: "geom_mean", Label: "geom_mean"},
+	{Value: "harm_mean", Label: "harm_mean"},
+	{Value: "median", Label: "median"},
 	{Value: "max", Label: "max"},
 	{Value: "min", Label: "min"},
 }
@@ -116,7 +122,27 @@ var aggregateFuncs = map[string]func([]float64) float64{
 		for _, x := range xs {
 			product *= x
 		}
+		if product < 0 {
+			return math.NaN() // no real root
+		}
 		return math.Pow(product, 1/float64(len(xs)))
+	},
+	"harm_mean": func(xs []float64) float64 {
+		// A 0 makes its reciprocal +Inf and the result 0, as in the limit.
+		sum := 0.0
+		for _, x := range xs {
+			sum += 1 / x
+		}
+		return float64(len(xs)) / sum
+	},
+	"median": func(xs []float64) float64 {
+		sorted := slices.Clone(xs)
+		slices.Sort(sorted)
+		mid := len(sorted) / 2
+		if len(sorted)%2 == 1 {
+			return sorted[mid]
+		}
+		return (sorted[mid-1] + sorted[mid]) / 2
 	},
 	"max": slices.Max[[]float64],
 	"min": slices.Min[[]float64],
@@ -173,16 +199,26 @@ func (c Conjugate) Apply(s [3][2]float64) float64 {
 //
 //  1. Empty cells start with a score of 0. Obstacles have no score, so are
 //     ignored by the rest of the round and can't be chosen.
+//
 //  2. Cells where an obstacle would make a bank (contiguous group of
 //     obstacles) bigger than MaxBank have no score.
+//
 //  3. Add ObstacleTerm of the number of empty cells in each direction
 //     before an obstacle, capped at the board's visibility, divided by
 //     visibility. The edge of the board doesn't block: a direction with no
 //     obstacle within visibility counts as visibility.
+//
 //  4. Add EdgeTerm of the number of empty cells in each direction before
 //     the edge of the board, divided by visibility.
+//
+//     If either term is undefined or infinite (NaN or ±Inf), which some
+//     combinations of functions give for some distances, the cell has no
+//     score.
+//
 //  5. Add (s - 0.5) * BetaCoef, where s ~ Beta(Beta, Beta).
+//
 //  6. Stretch the scores; see stretch.
+//
 //  7. Place an obstacle on a random cell weighted by score if Weighted,
 //     otherwise on the highest-scoring cell, breaking ties randomly.
 //
@@ -214,6 +250,9 @@ func Evolved(b *board.Board, cfg EvolvedConfig, rng *rand.Rand) Trace {
 				edge:      cfg.EdgeTerm.Apply(toEdge) / float64(visibility),
 				noise:     (beta(rng, cfg.Beta, cfg.Beta) - 0.5) * cfg.BetaCoef,
 			}
+			if !isFinite(sc.obstacles) || !isFinite(sc.edge) {
+				continue
+			}
 			sc.score = sc.obstacles + sc.edge + sc.noise
 			cells = append(cells, sc)
 		}
@@ -241,6 +280,10 @@ func Evolved(b *board.Board, cfg EvolvedConfig, rng *rand.Rand) Trace {
 		trace.Steps = append(trace.Steps, step)
 	}
 	return trace
+}
+
+func isFinite(x float64) bool {
+	return !math.IsNaN(x) && !math.IsInf(x, 0)
 }
 
 // evolvedMetrics are the values Evolved records for each scored cell.

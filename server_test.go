@@ -60,7 +60,7 @@ func TestGenerate(t *testing.T) {
 }
 
 func TestGenerateEvolved(t *testing.T) {
-	resp := generate(t, "algorithm=evolved&k_obstacles=12&k_max_bank=1&f_obstacles_a%27=identity&is_weighted=false")
+	resp := generate(t, "algorithm=evolved&k_obstacles=12&k_max_bank=1&f_obstacles_a=ln&is_weighted=false")
 	if resp.Placed != 12 {
 		t.Errorf("placed = %d, want 12", resp.Placed)
 	}
@@ -106,7 +106,7 @@ func TestGenerateRejectsBadParams(t *testing.T) {
 		"algorithm=uniform&n=3&seed=-1",
 		"algorithm=uniform&n=3&seed=x",
 		"algorithm=evolved&k_beta=0",
-		"algorithm=evolved&f_edge_b=median",
+		"algorithm=evolved&f_edge_b=mode",
 	} {
 		if rec := get(t, "/api/generate?"+query); rec.Code != http.StatusBadRequest {
 			t.Errorf("GET /api/generate?%s: status %d, want %d", query, rec.Code, http.StatusBadRequest)

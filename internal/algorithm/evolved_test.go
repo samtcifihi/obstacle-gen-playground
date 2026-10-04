@@ -1,6 +1,7 @@
 package algorithm
 
 import (
+	"encoding/json"
 	"fmt"
 	"math"
 	"net/url"
@@ -54,6 +55,76 @@ func TestConjugateApply(t *testing.T) {
 			t.Errorf("%s: got %v, want %v", tt.name, got, tt.want)
 		}
 	}
+}
+
+func TestAggregates(t *testing.T) {
+	tests := []struct {
+		name string
+		xs   []float64
+		want float64
+	}{
+		{"mean", []float64{1, 2, 6}, 3},
+		{"geom_mean", []float64{1, 2, 4}, 2},
+		{"geom_mean", []float64{0, 2, 4}, 0},
+		{"harm_mean", []float64{1, 4, 4}, 2},
+		{"harm_mean", []float64{0, 4, 4}, 0},
+		{"median", []float64{5, 1, 3}, 3},
+		{"median", []float64{5, 1, 4, 2}, 3},
+		{"median", []float64{math.Inf(-1), 2}, math.Inf(-1)},
+		{"max", []float64{1, 5, 3}, 5},
+		{"min", []float64{4, 1, 3}, 1},
+	}
+	for _, tt := range tests {
+		if got := aggregateFuncs[tt.name](tt.xs); got != tt.want && math.Abs(got-tt.want) > 1e-12 {
+			t.Errorf("%s(%v) = %v, want %v", tt.name, tt.xs, got, tt.want)
+		}
+	}
+	if got := aggregateFuncs["geom_mean"]([]float64{math.Inf(-1), 0, 1}); !math.IsNaN(got) {
+		t.Errorf("geom_mean(-Inf, 0, 1) = %v, want NaN", got)
+	}
+}
+
+func TestLnConjugateIsGeometricMean(t *testing.T) {
+	// ln, mean, e^x is the geometric mean; a 0 distance makes it 0.
+	c := conjugate(true, "ln", "mean", "mean", "exp")
+	if got := c.Apply([3][2]float64{{1, 2}, {4, 8}, {2, 4}}); math.Abs(got-math.Pow(512, 1.0/6)) > 1e-9 {
+		t.Errorf("got %v, want the geometric mean %v", got, math.Pow(512, 1.0/6))
+	}
+	if got := c.Apply([3][2]float64{{0, 2}, {4, 8}, {2, 4}}); got != 0 {
+		t.Errorf("with a 0 distance got %v, want 0", got)
+	}
+}
+
+func TestEvolvedSkipsUndefinedScores(t *testing.T) {
+	// ln then geom_mean is undefined for edge cells, whose outward distance
+	// is 0 (ln 0 = -Inf), so they get no score and the trace stays valid.
+	cfg := defaultEvolvedConfig(t)
+	cfg.EdgeTerm = conjugate(true, "ln", "geom_mean", "mean", "exp")
+	b := board.NewHexagon(5)
+	trace := Evolved(b, cfg, newRNG(1))
+	if len(trace.Steps) == 0 {
+		t.Fatal("placed no obstacles")
+	}
+	if _, err := json.Marshal(trace); err != nil {
+		t.Fatalf("trace doesn't encode as JSON: %v", err)
+	}
+	for _, c := range trace.Steps[0].Candidates {
+		if max(abs(c.Q), abs(c.R), abs(-c.Q-c.R)) == 4 {
+			t.Errorf("edge cell %v was scored", c.Hex)
+		}
+		for i, v := range c.Values {
+			if !isFinite(v) {
+				t.Errorf("cell %v has %s %v", c.Hex, trace.Metrics[i].Name, v)
+			}
+		}
+	}
+}
+
+func abs(x int) int {
+	if x < 0 {
+		return -x
+	}
+	return x
 }
 
 func TestDistances(t *testing.T) {
