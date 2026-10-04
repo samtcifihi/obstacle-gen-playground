@@ -109,6 +109,8 @@ type Param struct {
 	// MinExclusive, values must be strictly greater.
 	Min          float64 `json:"min"`
 	MinExclusive bool    `json:"minExclusive,omitempty"`
+	// Max, if set, is the highest value an Int or Float parameter may take.
+	Max *float64 `json:"max,omitempty"`
 	// Options are the values a Choice parameter may take.
 	Options []Option `json:"options,omitempty"`
 	// OnlyIf names a Bool parameter that must be true for this one to have
@@ -161,9 +163,9 @@ func (p Param) parse(s string) (any, error) {
 		}
 		return n, nil
 	case Float:
-		x, err := strconv.ParseFloat(s, 64)
-		if err != nil || math.IsInf(x, 0) || !p.inRange(x) {
-			return nil, fmt.Errorf("%s must be a number %s", p.Name, p.rangeText())
+		x, err := parseReal(s)
+		if err != nil || !p.inRange(x) {
+			return nil, fmt.Errorf("%s must be a number, like 0.5 or 1/2, %s", p.Name, p.rangeText())
 		}
 		return x, nil
 	case Bool:
@@ -185,7 +187,38 @@ func (p Param) parse(s string) (any, error) {
 	panic(fmt.Sprintf("parameter %s has unknown type %q", p.Name, p.Type))
 }
 
+// parseReal parses a finite real number written as a decimal, like 0.5,
+// or as a fraction of two, like 1/2.
+func parseReal(s string) (float64, error) {
+	parse := func(s string) (float64, error) {
+		x, err := strconv.ParseFloat(strings.TrimSpace(s), 64)
+		if err == nil && (math.IsInf(x, 0) || math.IsNaN(x)) {
+			err = fmt.Errorf("%q isn't finite", s)
+		}
+		return x, err
+	}
+	num, den, isFraction := strings.Cut(s, "/")
+	x, err := parse(num)
+	if err != nil || !isFraction {
+		return x, err
+	}
+	d, err := parse(den)
+	if err != nil {
+		return 0, err
+	}
+	if d == 0 {
+		return 0, fmt.Errorf("%q divides by 0", s)
+	}
+	if x /= d; math.IsInf(x, 0) {
+		return 0, fmt.Errorf("%q is too big", s)
+	}
+	return x, nil
+}
+
 func (p Param) inRange(x float64) bool {
+	if p.Max != nil && x > *p.Max {
+		return false
+	}
 	if p.MinExclusive {
 		return x > p.Min
 	}
@@ -193,7 +226,12 @@ func (p Param) inRange(x float64) bool {
 }
 
 func (p Param) rangeText() string {
-	if p.MinExclusive {
+	switch {
+	case p.Max != nil && !p.MinExclusive:
+		return fmt.Sprintf("from %g to %g", p.Min, *p.Max)
+	case p.Max != nil:
+		return fmt.Sprintf("greater than %g and at most %g", p.Min, *p.Max)
+	case p.MinExclusive:
 		return fmt.Sprintf("greater than %g", p.Min)
 	}
 	return fmt.Sprintf("of at least %g", p.Min)

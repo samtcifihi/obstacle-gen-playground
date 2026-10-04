@@ -25,8 +25,8 @@ var splitAlgorithm = Algorithm{
 				"centre itself, which is placed on its own"},
 		{Name: "k_edge_margin", Group: "Eligibility", Type: Int, Default: 1,
 			Description: "Fewest cells allowed between an obstacle and the edge (0 allows the perimeter)"},
-		{Name: "k_max_adjacent", Group: "Eligibility", Type: Int, Default: 1,
-			Description: "Most obstacles a new one may touch (0 = none, 6 = no limit)"},
+		{Name: "k_max_adjacent", Group: "Eligibility", Type: Int, Default: 1, Max: &maxAdjacent,
+			Description: "Most obstacles a new one may touch, from 0 (none) to 6 (no limit)"},
 		{Name: "f_split_axes", Group: "Score", Type: Choice, Default: "max", Options: aggregateOptions,
 			Description: "Combines the three axes' splits: max rewards one good line-break, min rewards breaking " +
 				"lines in every direction"},
@@ -52,6 +52,9 @@ var splitAlgorithm = Algorithm{
 		}, rng)
 	},
 }
+
+// maxAdjacent is the most obstacles a hex can touch.
+var maxAdjacent = 6.0
 
 // SplitConfig holds the parameters of Split.
 type SplitConfig struct {

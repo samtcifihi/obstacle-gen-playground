@@ -20,6 +20,9 @@ being chosen, and so on) and the cell that was chosen outlined. Hover over a
 cell to see all its values. The heatmap's colours run from the step's lowest
 value to its highest. Changing a parameter keeps you on the same step.
 
+Parameters that take real numbers (rather than whole numbers) accept fractions
+as well as decimals: `1/2` and `0.5` are the same.
+
 ## Algorithms
 
 ### Uniform
@@ -157,8 +160,9 @@ hex and its 180° rotation about the centre, placed together.
 
 - any of its hexes has fewer than `k_edge_margin` cells between it and the edge
   (0 allows the perimeter, 1 is the original, 2 keeps another ring clear);
-- any of its hexes touches more than `k_max_adjacent` obstacles (0 means none
-  may touch, 1 is the original, 6 is no limit). Unlike `k_max_bank`, which caps
+- any of its hexes touches more than `k_max_adjacent` obstacles, a whole
+  number from 0 to 6 (0 means none may touch, 1 is the original, 6 is no
+  limit). Unlike `k_max_bank`, which caps
   a bank's size, this limits local shape: long chains are fine, but not a hex
   touching two obstacles;
 - a bank would be bigger than `k_max_bank` (0 = no limit).
@@ -208,7 +212,8 @@ Without just: `go run .` (flags: `-addr`, `-open`).
 ## API
 
 `GET /api/algorithms` lists the algorithms with their parameters: name, type
-(`int`, `float`, `bool` or `choice`), default, minimum and options.
+(`int`, `float`, `bool` or `choice`), default, minimum, maximum (if any) and
+options. `float` parameters accept fractions like `1/2`.
 
 `GET /api/generate?algorithm=<id>[&edge=<1–15>][&seed=<seed>][&<param>=<value>...]`
 returns a generated board. `edge` is the board's edge length (default 6).

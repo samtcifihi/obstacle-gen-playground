@@ -308,13 +308,21 @@ function paramInput(alg, param) {
     input = el("input", { type: "checkbox" });
   } else if (param.type === "choice") {
     input = el("select", {}, ...param.options.map((o) => el("option", { value: o.value }, o.label)));
-  } else {
+  } else if (param.type === "float") {
+    // A text box, as number boxes don't take fractions like 1/2. The server
+    // checks the value.
     input = el("input", {
-      type: "number",
-      min: param.min,
-      step: param.type === "int" ? 1 : "any",
+      type: "text",
+      autocomplete: "off",
+      spellcheck: "false",
+      title: "A number like 0.5, or a fraction like 1/2",
       required: "",
     });
+  } else {
+    input = el("input", { type: "number", min: param.min, step: 1, required: "" });
+    if (param.max != null) {
+      input.max = param.max;
+    }
   }
   input.id = `param-${alg.id}-${param.name}`;
   input.name = param.name;

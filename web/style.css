@@ -170,6 +170,7 @@ select {
 }
 
 .param input[type="number"],
+.param input[type="text"],
 .param select {
   width: 10em;
 }
