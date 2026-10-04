@@ -88,7 +88,7 @@ func TestGenerateNothingEncodesEmptySteps(t *testing.T) {
 	for _, query := range []string{
 		"algorithm=uniform&n=0",
 		"algorithm=evolved&k_obstacles=0",
-		"algorithm=triple_beta&k_alpha_1=0.5&is_inset=false",
+		"algorithm=triple_beta&k_obstacles=0",
 	} {
 		rec := get(t, "/api/generate?"+query)
 		if body := rec.Body.String(); !strings.Contains(body, `"steps":[]`) {

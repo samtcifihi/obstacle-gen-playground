@@ -1,6 +1,7 @@
 package algorithm
 
 import (
+	"encoding/json"
 	"math"
 	"net/url"
 	"testing"
@@ -17,30 +18,33 @@ func ring(h board.Hex) int {
 }
 
 func TestHexWeightsUniform(t *testing.T) {
-	// Beta(1, 1) is flat, so every hex gets the same weight either way.
-	for _, inset := range []bool{false, true} {
-		for i, w := range hexWeights(board.NewHexagon(5), shapes(1, 1), inset) {
-			if w != 1 {
-				t.Errorf("inset=%v: cell %d has weight %v, want 1", inset, i, w)
-			}
+	// Beta(1, 1) is flat, so every hex gets the same weight.
+	for i, w := range hexWeights(board.NewHexagon(5), shapes(1, 1)) {
+		if w != 1 {
+			t.Errorf("cell %d has weight %v, want 1", i, w)
 		}
 	}
 }
 
-func TestHexWeightsPerimeter(t *testing.T) {
-	// Beta(2, 2) is 0 at 0 and 1, so perimeter hexes get no weight unless
-	// the coordinates are inset.
+func TestHexWeightsEdges(t *testing.T) {
+	// Coordinates scale to the middles of 9 equal bands, so they're never
+	// exactly 0 or 1, where Beta(2, 2) is 0 and Beta(0.5, 0.5) infinite.
 	b := board.NewHexagon(5)
-	for _, inset := range []bool{false, true} {
-		weights := hexWeights(b, shapes(2, 2), inset)
-		for i, c := range b.Cells {
-			if perimeter := ring(c.Hex) == 4; (weights[i] == 0) != (perimeter && !inset) {
-				t.Errorf("inset=%v: %v has weight %v", inset, c.Hex, weights[i])
+	for _, shape := range []BetaShape{{2, 2}, {0.5, 0.5}, {3, 0.2}} {
+		for i, w := range hexWeights(b, [3]BetaShape{shape, shape, shape}) {
+			if w <= 0 || !isFinite(w) {
+				t.Errorf("Beta(%v, %v): %v has weight %v", shape.Alpha, shape.Beta, b.Cells[i].Hex, w)
 			}
 		}
 	}
+	// The corner (4, -4, 0) is at 8.5/9, 0.5/9 and 0.5.
+	pdf := func(x float64) float64 { return 6 * x * (1 - x) }
+	want := pdf(8.5/9) * pdf(0.5/9) * pdf(0.5)
+	if w := hexWeights(b, shapes(2, 2))[b.Index()[board.Hex{Q: 4, R: -4}]]; math.Abs(w-want) > 1e-12 {
+		t.Errorf("corner has weight %v, want %v", w, want)
+	}
 	// The centre is at 0.5 on every axis, where Beta(2, 2) is 1.5.
-	if w := hexWeights(b, shapes(2, 2), false)[b.Index()[board.Hex{}]]; math.Abs(w-1.5*1.5*1.5) > 1e-12 {
+	if w := hexWeights(b, shapes(2, 2))[b.Index()[board.Hex{}]]; math.Abs(w-1.5*1.5*1.5) > 1e-12 {
 		t.Errorf("centre has weight %v, want 1.5³", w)
 	}
 }
@@ -49,13 +53,11 @@ func TestHexWeightsSymmetric(t *testing.T) {
 	// The same symmetric shape on every axis has sixfold symmetry.
 	b := board.NewHexagon(5)
 	index := b.Index()
-	for _, inset := range []bool{false, true} {
-		weights := hexWeights(b, shapes(2.5, 2.5), inset)
-		for i, c := range b.Cells {
-			rotated := board.Hex{Q: -c.R, R: c.Q + c.R}
-			if got := weights[index[rotated]]; math.Abs(got-weights[i]) > 1e-12*weights[i] {
-				t.Errorf("inset=%v: %v has weight %v, but rotated 60° to %v has %v", inset, c.Hex, weights[i], rotated, got)
-			}
+	weights := hexWeights(b, shapes(2.5, 2.5))
+	for i, c := range b.Cells {
+		rotated := board.Hex{Q: -c.R, R: c.Q + c.R}
+		if got := weights[index[rotated]]; math.Abs(got-weights[i]) > 1e-12*weights[i] {
+			t.Errorf("%v has weight %v, but rotated 60° to %v has %v", c.Hex, weights[i], rotated, got)
 		}
 	}
 }
@@ -63,7 +65,7 @@ func TestHexWeightsSymmetric(t *testing.T) {
 func TestHexWeightsAsymmetric(t *testing.T) {
 	// Beta(2, 5) on q favours low q: the lower left edge.
 	b := board.NewHexagon(5)
-	weights := hexWeights(b, [3]BetaShape{{2, 5}, {1, 1}, {1, 1}}, false)
+	weights := hexWeights(b, [3]BetaShape{{2, 5}, {1, 1}, {1, 1}})
 	sum, total := 0.0, 0.0
 	for i, c := range b.Cells {
 		sum += weights[i] * float64(c.Q)
@@ -77,7 +79,7 @@ func TestHexWeightsAsymmetric(t *testing.T) {
 func TestWeightedIndexMatchesWeights(t *testing.T) {
 	const samples = 200_000
 	b := board.NewHexagon(5)
-	weights := hexWeights(b, [3]BetaShape{{2, 5}, {3, 3}, {0.7, 1.2}}, true)
+	weights := hexWeights(b, [3]BetaShape{{2, 5}, {3, 3}, {0.7, 1.2}})
 	total := 0.0
 	for _, w := range weights {
 		total += w
@@ -153,7 +155,7 @@ func TestTripleBetaFollowsWeights(t *testing.T) {
 	cfg.Obstacles = 1
 	b := board.NewHexagon(5)
 	index := b.Index()
-	weights := hexWeights(b, cfg.Axes, cfg.Inset)
+	weights := hexWeights(b, cfg.Axes)
 	total := 0.0
 	for _, w := range weights {
 		total += w
@@ -173,37 +175,33 @@ func TestTripleBetaFollowsWeights(t *testing.T) {
 }
 
 func TestTripleBetaZeroWeightCells(t *testing.T) {
-	// With Beta(2, 2) the perimeter has no weight, so only the 37 inner
-	// cells can be filled, and they're offered as the only candidates.
+	// Beta(2000, 1) is so steep that it underflows to 0 below the middle,
+	// and every hex has a coordinate at or below the middle, so no hex has
+	// any weight.
 	b := board.NewHexagon(5)
 	cfg := defaultTripleBetaConfig(t)
-	cfg.Axes = shapes(2, 2)
-	cfg.Inset = false
-	cfg.Obstacles = 61
+	cfg.Axes = shapes(2000, 1)
 	trace := TripleBeta(b, cfg, newRNG(1))
-	if len(trace.Steps) != 37 || trace.Note != "no free cell has any weight" {
-		t.Errorf("placed %d obstacles with note %q, want 37 and no weight left", len(trace.Steps), trace.Note)
+	if len(trace.Steps) != 0 || trace.Note != "no free cell has any weight" {
+		t.Errorf("placed %d obstacles with note %q, want none and no weight", len(trace.Steps), trace.Note)
 	}
-	for _, step := range trace.Steps {
-		for _, c := range step.Candidates {
-			if ring(c.Hex) == 4 {
-				t.Fatalf("perimeter hex %v offered as a candidate", c.Hex)
-			}
-		}
-	}
-	checkTrace(t, "triple beta", b, trace)
 }
 
-func TestTripleBetaInfiniteWeights(t *testing.T) {
-	// α < 1 makes the density infinite at 0, so it needs is_inset.
-	for _, inset := range []bool{false, true} {
+func TestTripleBetaUndefinedWeights(t *testing.T) {
+	// Shapes this extreme overflow the density's arithmetic.
+	for _, cfg := range []func(*TripleBetaConfig){
+		func(cfg *TripleBetaConfig) { cfg.Axes = shapes(1e308, 1e308) },
+		func(cfg *TripleBetaConfig) { cfg.Distance = BetaShape{1e308, 1e308} },
+	} {
 		b := board.NewHexagon(5)
-		cfg := defaultTripleBetaConfig(t)
-		cfg.Axes = shapes(0.5, 0.5)
-		cfg.Inset = inset
-		trace := TripleBeta(b, cfg, newRNG(1))
-		if placed := len(trace.Steps); inset != (placed == cfg.Obstacles) || inset == (trace.Note != "") {
-			t.Errorf("inset=%v: placed %d with note %q", inset, placed, trace.Note)
+		c := defaultTripleBetaConfig(t)
+		cfg(&c)
+		trace := TripleBeta(b, c, newRNG(1))
+		if len(trace.Steps) != 0 || trace.Note == "" {
+			t.Errorf("placed %d obstacles with note %q, want none and a note", len(trace.Steps), trace.Note)
+		}
+		if _, err := json.Marshal(trace); err != nil {
+			t.Errorf("trace doesn't encode as JSON: %v", err)
 		}
 	}
 }

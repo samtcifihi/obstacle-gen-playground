@@ -12,7 +12,7 @@ var tripleBetaAlgorithm = Algorithm{
 	ID:   "triple_beta",
 	Name: "Triple Beta",
 	Description: "Weights every hex by three beta densities, one for each cube coordinate (q, r, s), each " +
-		"scaled so the coordinate's range on the board runs from 0 to 1, multiplied together, and by a fourth " +
+		"scaled so the coordinate's bands across the board evenly split 0 to 1, multiplied together, and by a fourth " +
 		"beta density over its distance to the nearest obstacle. Each obstacle goes on a free hex (no obstacle, " +
 		"and not making a bank too big) picked with probability proportional to its weight.",
 	Params: slices.Concat(
@@ -25,10 +25,6 @@ var tripleBetaAlgorithm = Algorithm{
 				Description: "Force α = β for each axis's distribution, so each is symmetric about the centre"},
 			{Name: "is_axes_shared", Group: "Distributions", Type: Bool, Default: true,
 				Description: "Force all 3 distributions to use axis 1's α and β"},
-			{Name: "is_inset", Group: "Distributions", Type: Bool, Default: true,
-				Description: "Scale each coordinate to the middle of its band, (x + R + ½)/(2R + 1), instead of " +
-					"(x/R + 1)/2, so the board's edges aren't at exactly 0 and 1. Keeps edge hexes possible when " +
-					"α or β > 1, and is needed when α or β < 1, whose density is infinite at 0 or 1"},
 		},
 		axisParams(1, "q", "lower left edge", "upper right edge"),
 		axisParams(2, "r", "top edge", "bottom edge"),
@@ -74,7 +70,6 @@ func tripleBetaConfig(v Values) TripleBetaConfig {
 	cfg := TripleBetaConfig{
 		Obstacles: v.Int("k_obstacles"),
 		MaxBank:   v.Int("k_max_bank"),
-		Inset:     v.Bool("is_inset"),
 		Distance: BetaShape{
 			Alpha: v.Float("k_alpha_obstacles"),
 			Beta:  v.Float("k_beta_obstacles"),
@@ -91,9 +86,8 @@ func tripleBetaConfig(v Values) TripleBetaConfig {
 
 // TripleBetaConfig holds the parameters of TripleBeta.
 type TripleBetaConfig struct {
-	Obstacles int  // k_obstacles
-	MaxBank   int  // k_max_bank; 0 means no limit
-	Inset     bool // is_inset
+	Obstacles int // k_obstacles
+	MaxBank   int // k_max_bank; 0 means no limit
 	// Axes holds the shape of the distribution over each cube coordinate:
 	// q, r and s.
 	Axes [3]BetaShape
@@ -121,11 +115,17 @@ type BetaShape struct {
 func TripleBeta(b *board.Board, cfg TripleBetaConfig, rng *rand.Rand) Trace {
 	g := grid{b: b, index: b.Index()}
 	visibility := b.Visibility()
-	positions := hexWeights(b, cfg.Axes, cfg.Inset)
+	positions := hexWeights(b, cfg.Axes)
+	distances := make([]float64, visibility+1) // distance weight by distance
+	for d := range distances {
+		distances[d] = distanceWeight(d, visibility, cfg.Distance)
+	}
 	trace := Trace{Metrics: tripleBetaMetrics}
-	if slices.ContainsFunc(positions, func(w float64) bool { return !isFinite(w) }) {
-		trace.Note = "some hexes have infinite weight (a beta density with α or β below 1 is infinite at the " +
-			"board's edges); turn on is_inset"
+	notFinite := func(w float64) bool { return !isFinite(w) }
+	if slices.ContainsFunc(positions, notFinite) || slices.ContainsFunc(distances, notFinite) {
+		// Scaled coordinates and distances are never exactly 0 or 1, so only
+		// extreme shapes can get here, by overflowing.
+		trace.Note = "some weights are infinite or undefined; α or β is too extreme"
 		return trace
 	}
 
@@ -152,7 +152,7 @@ func TripleBeta(b *board.Board, cfg TripleBetaConfig, rng *rand.Rand) Trace {
 			}
 			anyFree = true
 			d := nearestObstacle(c.Hex, obstacles, visibility)
-			dw := distanceWeight(d, visibility, cfg.Distance)
+			dw := distances[d]
 			if w := positions[i] * dw; w > 0 {
 				options = append(options, option{cell: i, distance: d, distanceWeight: dw, weight: w})
 				weights = append(weights, w)
@@ -212,22 +212,17 @@ func distanceWeight(d, visibility int, shape BetaShape) float64 {
 
 // hexWeights returns the weight of each cell of b: the product of the beta
 // densities in shapes at its cube coordinates q, r and s, each scaled into
-// [0, 1]. Normally a coordinate x in [-R, R], where R is the board's
-// radius, scales to (x/R + 1)/2, so the board's extremes are at 0 and 1.
-// With inset it scales to the middle of its band, (x + R + ½)/(2R + 1).
-func hexWeights(b *board.Board, shapes [3]BetaShape, inset bool) []float64 {
+// (0, 1). The 2R + 1 values a coordinate takes on a board of radius R split
+// [0, 1] into equal bands, and a coordinate x scales to the middle of its
+// band, (x + R + ½)/(2R + 1), so it's never exactly 0 or 1, where a beta
+// density can be 0 or infinite.
+func hexWeights(b *board.Board, shapes [3]BetaShape) []float64 {
 	radius := 0
 	for _, c := range b.Cells {
 		radius = max(radius, abs(c.Q), abs(c.R), abs(c.Q+c.R))
 	}
 	scale := func(x int) float64 {
-		switch {
-		case inset:
-			return (float64(x+radius) + 0.5) / float64(2*radius+1)
-		case radius == 0:
-			return 0.5
-		}
-		return (float64(x)/float64(radius) + 1) / 2
+		return (float64(x+radius) + 0.5) / float64(2*radius+1)
 	}
 	weights := make([]float64, len(b.Cells))
 	for i, c := range b.Cells {

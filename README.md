@@ -84,8 +84,8 @@ Uses three beta distributions as weights over the board's hexes, one for each
 cube coordinate (`q`, `r` and `s`, with `q + r + s = 0`, each from −R to R on a
 board of radius R):
 
-1. Scale each coordinate into [0, 1]: `x → (x + R + ½)/(2R + 1)`, the middle of
-   its band, or with `is_inset` off, `x → (x/R + 1)/2` (see Edges below).
+1. Scale each coordinate into (0, 1): the 2R + 1 values it takes split [0, 1]
+   into equal bands, and `x → (x + R + ½)/(2R + 1)`, the middle of its band.
 2. Weight each hex by the product of the three beta densities at its scaled
    coordinates: `w = f_q(Q) · f_r(R') · f_s(S)`, using `k_alpha_1`/`k_beta_1`
    for `q`, `_2` for `r` and `_3` for `s`.
@@ -113,9 +113,8 @@ Evolved's `f_a'`.
 Each round, each free hex's distance `d` is the number of cells between it and
 the nearest obstacle (0 if adjacent, the same convention as Evolved), capped at
 `visibility` V (4 here). With no obstacles yet, every hex is at V. Like the
-coordinates, it's scaled to the middle of its band, `(d + ½)/(V + 1)`, so α or
-β < 1 can't make it infinite, and the hex's weight is multiplied by the density
-there.
+coordinates, it's scaled to the middle of its band, `(d + ½)/(V + 1)`, and the
+hex's weight is multiplied by the density there.
 
 - Beta(1, 1) is neutral.
 - α > β favours larger distances, spreading obstacles out.
@@ -130,12 +129,12 @@ It stops after placing `k_obstacles` obstacles or when no free hex has any
 weight. The heatmap's chances are exact, and it can also show each hex's
 position weight, distance and distance weight.
 
-**Edges.** `is_inset` (on by default) scales each coordinate to the middle of
-its band, so the board's edges sit just inside (0, 1). With it off, they're at
-exactly 0 and 1. Then a density of 0 at 0 or 1 (α or β > 1) gives the matching
-edge hexes no weight: with Beta(2, 2) on every axis, no perimeter hex can be
-chosen. A density with α or β < 1 is infinite at 0 or 1, which gives edge hexes
-infinite weight, so with `is_inset` off it won't place anything.
+**Edges.** Because coordinates and distances scale to the middles of their
+bands, they're never exactly 0 or 1, where a beta density with α or β > 1 is 0
+and one with α or β < 1 is infinite. So short of extreme shapes (say α in the
+thousands, whose density rounds down to 0), every hex keeps a finite, non-zero
+weight: with Beta(2, 2) on every axis, perimeter hexes are unlikely but
+possible.
 
 ## Running
 
