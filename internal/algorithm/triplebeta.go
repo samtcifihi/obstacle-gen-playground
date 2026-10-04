@@ -195,7 +195,6 @@ func TripleBeta(b *board.Board, cfg TripleBetaConfig, rng *rand.Rand) Trace {
 		values []float64 // what distance records
 	}
 	for len(trace.Steps) < cfg.Obstacles {
-		banks := g.banks()
 		var obstacles []board.Hex
 		for _, c := range b.Cells {
 			if c.Obstacle {
@@ -206,13 +205,10 @@ func TripleBeta(b *board.Board, cfg TripleBetaConfig, rng *rand.Rand) Trace {
 
 		var options []option
 		var weights []float64
-		total, anyFree := 0.0, false
-		for i, c := range b.Cells {
-			if c.Obstacle || (cfg.MaxBank > 0 && banks.sizeWith(g, c.Hex) > cfg.MaxBank) {
-				continue
-			}
-			anyFree = true
-			dw, values := distance.weigh(c.Hex)
+		total := 0.0
+		free := g.freeCells(cfg.MaxBank)
+		for _, i := range free {
+			dw, values := distance.weigh(b.Cells[i].Hex)
 			if w := positions[i] * dw; w > 0 {
 				options = append(options, option{cell: i, weight: w, values: values})
 				weights = append(weights, w)
@@ -221,7 +217,7 @@ func TripleBeta(b *board.Board, cfg TripleBetaConfig, rng *rand.Rand) Trace {
 		}
 		if len(options) == 0 {
 			trace.Note = "no free cell left"
-			if anyFree {
+			if len(free) > 0 {
 				trace.Note = "no free cell has any weight"
 			}
 			break
@@ -231,10 +227,11 @@ func TripleBeta(b *board.Board, cfg TripleBetaConfig, rng *rand.Rand) Trace {
 		b.Cells[pick].Obstacle = true
 
 		step := Step{Placed: b.Cells[pick].Hex, Candidates: make([]Candidate, len(options))}
-		for j, o := range options {
+		for j, chance := range weightedChances(weights, total) {
+			o := options[j]
 			step.Candidates[j] = Candidate{
 				Hex:    b.Cells[o.cell].Hex,
-				Values: append([]float64{o.weight / total, o.weight, positions[o.cell]}, o.values...),
+				Values: append([]float64{chance, o.weight, positions[o.cell]}, o.values...),
 			}
 		}
 		trace.Steps = append(trace.Steps, step)
@@ -249,8 +246,6 @@ var tripleBetaMetrics = []Metric{
 	{Name: "weight", Description: "Weight (position weight × distance weight)"},
 	{Name: "position", Description: "Position weight (product of the three axis densities)"},
 }
-
-func notFinite(w float64) bool { return !isFinite(w) }
 
 // distanceTerm works out the distance weights of TripleBeta's cells.
 type distanceTerm interface {
@@ -321,7 +316,7 @@ type axisDistance struct {
 }
 
 func newAxisDistance(b *board.Board, shapes [3]BetaShape) *axisDistance {
-	t := &axisDistance{radius: boardRadius(b)}
+	t := &axisDistance{radius: b.Radius()}
 	for axis, shape := range shapes {
 		t.weights[axis] = make([]float64, 2*t.radius+1)
 		for d := range t.weights[axis] {
@@ -379,7 +374,7 @@ func (t *axisDistance) weigh(h board.Hex) (float64, []float64) {
 		if d < nearest {
 			nearest, t.nearest = d, t.nearest[:0]
 		}
-		c, co := cube(h), cube(o)
+		c, co := h.Cube(), o.Cube()
 		t.nearest = append(t.nearest, [3]int{abs(c[0] - co[0]), abs(c[1] - co[1]), abs(c[2] - co[2])})
 	}
 	slices.SortFunc(t.nearest, func(a, b [3]int) int { return slices.Compare(a[:], b[:]) })
@@ -428,58 +423,17 @@ func distanceWeight(d, limit int, shape BetaShape) float64 {
 // band, (x + R + ½)/(2R + 1), so it's never exactly 0 or 1, where a beta
 // density can be 0 or infinite.
 func hexWeights(b *board.Board, shapes [3]BetaShape) []float64 {
-	radius := boardRadius(b)
+	radius := b.Radius()
 	scale := func(x int) float64 {
 		return (float64(x+radius) + 0.5) / float64(2*radius+1)
 	}
 	weights := make([]float64, len(b.Cells))
 	for i, c := range b.Cells {
 		w := 1.0
-		for j, x := range cube(c.Hex) {
+		for j, x := range c.Cube() {
 			w *= betaPDF(scale(x), shapes[j].Alpha, shapes[j].Beta)
 		}
 		weights[i] = w
 	}
 	return weights
-}
-
-// boardRadius returns the radius of b: the furthest any cell's cube
-// coordinates get from 0.
-func boardRadius(b *board.Board) int {
-	r := 0
-	for _, c := range b.Cells {
-		r = max(r, abs(c.Q), abs(c.R), abs(c.Q+c.R))
-	}
-	return r
-}
-
-// cube returns h's cube coordinates: q, r and s = -q - r.
-func cube(h board.Hex) [3]int {
-	return [3]int{h.Q, h.R, -h.Q - h.R}
-}
-
-// weightedIndex returns a random index into weights, chosen with
-// probability proportional to its weight. total must be their sum.
-func weightedIndex(rng *rand.Rand, weights []float64, total float64) int {
-	r := rng.Float64() * total
-	fallback := 0
-	for i, w := range weights {
-		if r < w {
-			return i
-		}
-		r -= w
-		if w > 0 {
-			fallback = i
-		}
-	}
-	// Rounding left r just past the end: take the last index that had a
-	// chance.
-	return fallback
-}
-
-func abs(x int) int {
-	if x < 0 {
-		return -x
-	}
-	return x
 }

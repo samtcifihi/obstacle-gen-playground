@@ -86,6 +86,23 @@ func (g grid) banks() banks {
 	return bs
 }
 
+// freeCells returns the indexes of the cells an obstacle could go on:
+// those without one, where one wouldn't make a bank bigger than maxBank
+// (0 means no limit). It only works out the banks when there's a limit.
+func (g grid) freeCells(maxBank int) []int {
+	var bs banks
+	if maxBank > 0 {
+		bs = g.banks()
+	}
+	var free []int
+	for i, c := range g.b.Cells {
+		if !c.Obstacle && (maxBank == 0 || bs.sizeWith(g, c.Hex) <= maxBank) {
+			free = append(free, i)
+		}
+	}
+	return free
+}
+
 // sizeWith returns the size of the bank an obstacle on empty hex h would
 // be part of.
 func (bs banks) sizeWith(g grid, h board.Hex) int {

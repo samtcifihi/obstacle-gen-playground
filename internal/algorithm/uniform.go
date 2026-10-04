@@ -36,22 +36,9 @@ type UniformConfig struct {
 // placed.
 func Uniform(b *board.Board, cfg UniformConfig, rng *rand.Rand) Trace {
 	trace := Trace{Metrics: []Metric{chanceMetric}}
-	// Banks only matter with a limit, so don't work them out otherwise.
-	var g grid
-	if cfg.MaxBank > 0 {
-		g = grid{b: b, index: b.Index()}
-	}
+	g := grid{b: b, index: b.Index()}
 	for len(trace.Steps) < cfg.Obstacles {
-		var bs banks
-		if cfg.MaxBank > 0 {
-			bs = g.banks()
-		}
-		var free []int
-		for i, c := range b.Cells {
-			if !c.Obstacle && (cfg.MaxBank == 0 || bs.sizeWith(g, c.Hex) <= cfg.MaxBank) {
-				free = append(free, i)
-			}
-		}
+		free := g.freeCells(cfg.MaxBank)
 		if len(free) == 0 {
 			trace.Note = "no free cell left"
 			break

@@ -27,6 +27,11 @@ func (h Hex) DistanceTo(o Hex) int {
 	return max(abs(dq), abs(dr), abs(dq+dr))
 }
 
+// Cube returns h's cube coordinates: q, r and s = -q - r.
+func (h Hex) Cube() [3]int {
+	return [3]int{h.Q, h.R, -h.Q - h.R}
+}
+
 func abs(x int) int {
 	if x < 0 {
 		return -x
@@ -79,6 +84,17 @@ func (b *Board) Index() map[Hex]int {
 		index[c.Hex] = i
 	}
 	return index
+}
+
+// Radius is the furthest any cell is from the centre: the largest of its
+// cube coordinates' absolute values, each running from -Radius to Radius.
+// On a hexagon that's its edge length - 1.
+func (b *Board) Radius() int {
+	r := 0
+	for _, c := range b.Cells {
+		r = max(r, abs(c.Q), abs(c.R), abs(c.Q+c.R))
+	}
+	return r
 }
 
 // Visibility is the furthest distance from the board's centre cell to the

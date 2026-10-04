@@ -85,70 +85,6 @@ func evolvedConfig(v Values) EvolvedConfig {
 	}
 }
 
-var scalarOptions = []Option{
-	{Value: "sqrt", Label: "sqrt(x)", Inverse: "square"},
-	{Value: "square", Label: "x^2", Inverse: "sqrt"},
-	{Value: "identity", Label: "x", Inverse: "identity"},
-	{Value: "ln", Label: "ln(x)", Inverse: "exp"},
-	{Value: "exp", Label: "e^x", Inverse: "ln"},
-}
-
-var scalarFuncs = map[string]func(float64) float64{
-	"sqrt":     math.Sqrt,
-	"square":   func(x float64) float64 { return x * x },
-	"identity": func(x float64) float64 { return x },
-	"ln":       math.Log, // ln 0 is -Inf, which e^x maps back to 0
-	"exp":      math.Exp,
-}
-
-var aggregateOptions = []Option{
-	{Value: "mean", Label: "mean"},
-	{Value: "geom_mean", Label: "geom_mean"},
-	{Value: "harm_mean", Label: "harm_mean"},
-	{Value: "median", Label: "median"},
-	{Value: "max", Label: "max"},
-	{Value: "min", Label: "min"},
-}
-
-var aggregateFuncs = map[string]func([]float64) float64{
-	"mean": func(xs []float64) float64 {
-		sum := 0.0
-		for _, x := range xs {
-			sum += x
-		}
-		return sum / float64(len(xs))
-	},
-	"geom_mean": func(xs []float64) float64 {
-		product := 1.0
-		for _, x := range xs {
-			product *= x
-		}
-		if product < 0 {
-			return math.NaN() // no real root
-		}
-		return math.Pow(product, 1/float64(len(xs)))
-	},
-	"harm_mean": func(xs []float64) float64 {
-		// A 0 makes its reciprocal +Inf and the result 0, as in the limit.
-		sum := 0.0
-		for _, x := range xs {
-			sum += 1 / x
-		}
-		return float64(len(xs)) / sum
-	},
-	"median": func(xs []float64) float64 {
-		sorted := slices.Clone(xs)
-		slices.Sort(sorted)
-		mid := len(sorted) / 2
-		if len(sorted)%2 == 1 {
-			return sorted[mid]
-		}
-		return (sorted[mid-1] + sorted[mid]) / 2
-	},
-	"max": slices.Max[[]float64],
-	"min": slices.Min[[]float64],
-}
-
 // EvolvedConfig holds the parameters of Evolved.
 type EvolvedConfig struct {
 	Obstacles    int       // k_obstacles
@@ -232,12 +168,9 @@ func Evolved(b *board.Board, cfg EvolvedConfig, rng *rand.Rand) Trace {
 	visibility := max(b.Visibility(), 1)
 	trace := Trace{Metrics: evolvedMetrics}
 	for len(trace.Steps) < cfg.Obstacles {
-		banks := g.banks()
 		var cells []scoredCell
-		for i, c := range b.Cells {
-			if c.Obstacle || (cfg.MaxBank > 0 && banks.sizeWith(g, c.Hex) > cfg.MaxBank) {
-				continue
-			}
+		for _, i := range g.freeCells(cfg.MaxBank) {
+			c := b.Cells[i]
 			var clearance, toEdge [3][2]float64
 			for a, axis := range board.Axes {
 				for s, dir := range axis {
@@ -264,15 +197,23 @@ func Evolved(b *board.Board, cfg EvolvedConfig, rng *rand.Rand) Trace {
 
 		stretch(cells, cfg.Stretching, cfg.Stretch)
 		var pick int
+		var chances []float64
 		if cfg.Weighted {
-			pick = weightedChoice(cells, rng)
+			weights, total := make([]float64, len(cells)), 0.0
+			for i, c := range cells {
+				weights[i] = c.weight
+				total += c.weight
+			}
+			pick = cells[weightedIndex(rng, weights, total)].cell
+			chances = weightedChances(weights, total)
 		} else {
 			pick = bestChoice(cells, rng)
+			chances = bestChances(cells)
 		}
 		b.Cells[pick].Obstacle = true
 
 		step := Step{Placed: b.Cells[pick].Hex, Candidates: make([]Candidate, len(cells))}
-		for i, chance := range chances(cells, cfg.Weighted) {
+		for i, chance := range chances {
 			c := cells[i]
 			step.Candidates[i] = Candidate{
 				Hex:    b.Cells[c.cell].Hex,
@@ -282,10 +223,6 @@ func Evolved(b *board.Board, cfg EvolvedConfig, rng *rand.Rand) Trace {
 		trace.Steps = append(trace.Steps, step)
 	}
 	return trace
-}
-
-func isFinite(x float64) bool {
-	return !math.IsNaN(x) && !math.IsInf(x, 0)
 }
 
 // evolvedMetrics are the values Evolved records for each scored cell.
@@ -324,29 +261,6 @@ func stretch(cells []scoredCell, stretching bool, k float64) {
 	}
 }
 
-// weightedChoice returns a random cell, chosen with probability
-// proportional to its weight.
-func weightedChoice(cells []scoredCell, rng *rand.Rand) int {
-	total := 0.0
-	for _, c := range cells {
-		total += c.weight
-	}
-	r := rng.Float64() * total
-	fallback := cells[0].cell
-	for _, c := range cells {
-		if r < c.weight {
-			return c.cell
-		}
-		r -= c.weight
-		if c.weight > 0 {
-			fallback = c.cell
-		}
-	}
-	// Rounding left r just past the end: take the last cell that had a
-	// chance.
-	return fallback
-}
-
 // bestChoice returns the cell with the highest weight, choosing uniformly at
 // random between ties.
 func bestChoice(cells []scoredCell, rng *rand.Rand) int {
@@ -365,20 +279,9 @@ func bestChoice(cells []scoredCell, rng *rand.Rand) int {
 	return best.cell
 }
 
-// chances returns each cell's probability of being picked by weightedChoice
-// (if weighted) or bestChoice.
-func chances(cells []scoredCell, weighted bool) []float64 {
+// bestChances returns each cell's chance of being picked by bestChoice.
+func bestChances(cells []scoredCell) []float64 {
 	p := make([]float64, len(cells))
-	if weighted {
-		total := 0.0
-		for _, c := range cells {
-			total += c.weight
-		}
-		for i, c := range cells {
-			p[i] = c.weight / total
-		}
-		return p
-	}
 	best, ties := cells[0].weight, 0
 	for _, c := range cells {
 		best = max(best, c.weight)

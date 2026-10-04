@@ -112,26 +112,6 @@ func TestParseFollows(t *testing.T) {
 	}
 }
 
-func TestOptionsHaveFuncs(t *testing.T) {
-	for _, o := range scalarOptions {
-		f, inv := scalarFuncs[o.Value], scalarFuncs[o.Inverse]
-		if f == nil || inv == nil {
-			t.Errorf("scalar option %q or its inverse %q has no function", o.Value, o.Inverse)
-			continue
-		}
-		for _, x := range []float64{0, 0.5, 1, 2.5, 8} {
-			if got := inv(f(x)); math.Abs(got-x) > 1e-9 {
-				t.Errorf("%s then %s maps %v to %v", o.Value, o.Inverse, x, got)
-			}
-		}
-	}
-	for _, o := range aggregateOptions {
-		if aggregateFuncs[o.Value] == nil {
-			t.Errorf("aggregate option %q has no function", o.Value)
-		}
-	}
-}
-
 func TestRunWithDefaults(t *testing.T) {
 	for _, a := range All {
 		v, err := a.Parse(url.Values{})

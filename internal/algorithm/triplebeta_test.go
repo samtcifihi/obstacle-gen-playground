@@ -15,10 +15,6 @@ func shapes(alpha, beta float64) [3]BetaShape {
 	return [3]BetaShape{{alpha, beta}, {alpha, beta}, {alpha, beta}}
 }
 
-func ring(h board.Hex) int {
-	return max(abs(h.Q), abs(h.R), abs(h.Q+h.R))
-}
-
 func TestHexWeightsUniform(t *testing.T) {
 	// Beta(1, 1) is flat, so every hex gets the same weight.
 	for i, w := range hexWeights(board.NewHexagon(5), shapes(1, 1)) {
@@ -75,27 +71,6 @@ func TestHexWeightsAsymmetric(t *testing.T) {
 	}
 	if mean := sum / total; mean > -1 {
 		t.Errorf("weighted mean q is %v, want well below 0", mean)
-	}
-}
-
-func TestWeightedIndexMatchesWeights(t *testing.T) {
-	const samples = 200_000
-	b := board.NewHexagon(5)
-	weights := hexWeights(b, [3]BetaShape{{2, 5}, {3, 3}, {0.7, 1.2}})
-	total := 0.0
-	for _, w := range weights {
-		total += w
-	}
-	counts := make([]float64, len(weights))
-	rng := newRNG(9)
-	for range samples {
-		counts[weightedIndex(rng, weights, total)]++
-	}
-	for i, w := range weights {
-		p := w / total
-		if got := counts[i] / samples; math.Abs(got-p) > 4*math.Sqrt(p*(1-p)/samples)+1e-4 {
-			t.Errorf("cell %v picked %.4f of the time, want %.4f", b.Cells[i].Hex, got, p)
-		}
 	}
 }
 

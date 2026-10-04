@@ -84,3 +84,19 @@ func TestDistanceTo(t *testing.T) {
 		}
 	}
 }
+
+func TestCube(t *testing.T) {
+	for h, want := range map[Hex][3]int{{}: {0, 0, 0}, {Q: 2, R: -1}: {2, -1, -1}, {Q: -3, R: 5}: {-3, 5, -2}} {
+		if got := h.Cube(); got != want {
+			t.Errorf("%v.Cube() = %v, want %v", h, got, want)
+		}
+	}
+}
+
+func TestRadius(t *testing.T) {
+	for edge := 1; edge <= 8; edge++ {
+		if got := NewHexagon(edge).Radius(); got != edge-1 {
+			t.Errorf("edge length %d: radius %d, want %d", edge, got, edge-1)
+		}
+	}
+}

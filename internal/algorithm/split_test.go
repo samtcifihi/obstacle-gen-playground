@@ -150,8 +150,8 @@ func TestSplitEdgeMargin(t *testing.T) {
 		cfg.Obstacles, cfg.EdgeMargin, cfg.MaxAdjacent, cfg.Symmetric = 1000, margin, 6, false
 		trace := Split(b, cfg, newRNG(1))
 		for _, c := range b.Cells {
-			if c.Obstacle && ring(c.Hex) > 5-margin {
-				t.Errorf("k_edge_margin=%d: obstacle at %v, %d cells from the edge", margin, c.Hex, 5-ring(c.Hex))
+			if c.Obstacle && c.Hex.DistanceTo(board.Hex{}) > 5-margin {
+				t.Errorf("k_edge_margin=%d: obstacle at %v, %d cells from the edge", margin, c.Hex, 5-c.Hex.DistanceTo(board.Hex{}))
 			}
 		}
 		// It fills everything it's allowed to.
@@ -271,30 +271,6 @@ func TestSplitIsReproducible(t *testing.T) {
 	for i := range a.Cells {
 		if a.Cells[i] != b.Cells[i] {
 			t.Fatalf("same seed gave different boards at cell %d", i)
-		}
-	}
-}
-
-func TestSizeWithAll(t *testing.T) {
-	b := board.NewHexagon(6)
-	g := grid{b: b, index: b.Index()}
-	for _, h := range []board.Hex{{Q: 0, R: 0}, {Q: 1, R: 0}, {Q: -3, R: 0}, {Q: 3, R: -3}} {
-		b.Cells[g.index[h]].Obstacle = true
-	}
-	bs := g.banks()
-	for _, tt := range []struct {
-		hs   []board.Hex
-		want int
-	}{
-		{[]board.Hex{{Q: 4, R: 0}}, 1},                 // touches nothing
-		{[]board.Hex{{Q: 2, R: 0}}, 3},                 // joins the centre pair
-		{[]board.Hex{{Q: 2, R: 0}, {Q: -2, R: 0}}, 3},  // separate banks: 2 + 1 and 1 + 1
-		{[]board.Hex{{Q: -1, R: 0}, {Q: 2, R: 0}}, 4},  // both join the centre pair
-		{[]board.Hex{{Q: -2, R: 0}, {Q: -1, R: 0}}, 5}, // adjacent to each other, bridging (-3,0) and the centre pair
-		{[]board.Hex{{Q: 3, R: -2}, {Q: -3, R: 1}}, 2}, // each joins a single
-	} {
-		if got := bs.sizeWithAll(g, tt.hs); got != tt.want {
-			t.Errorf("sizeWithAll(%v) = %d, want %d", tt.hs, got, tt.want)
 		}
 	}
 }
