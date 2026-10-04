@@ -320,6 +320,24 @@ To listen somewhere else, override `addr`, e.g. `just addr=:9000` or
 
 Without just: `go run .` (flags: `-addr`, `-open`).
 
+## Code layout
+
+- `main.go` and `server.go`: the web server and its API. `version.go` works
+  out which commit it was built from.
+- `internal/board`: hexagonal boards and hex coordinates.
+- `internal/algorithm`: one file per algorithm (`uniform.go`, `evolved.go`,
+  `triplebeta.go`, `split.go`), and what they share: `registry.go` lists the
+  algorithms, `params.go` and `values.go` describe and parse their
+  parameters, `trace.go` is what they record for the heatmap, and `grid.go`,
+  `choose.go`, `functions.go` and `numbers.go` hold common helpers.
+- `web`: the page. `app.js` loads the algorithms and generates boards,
+  `form.js` builds the settings form, `board.js` draws the board and
+  heatmap, `share.js` copies, saves and loads, and `dom.js` builds elements.
+
+To add an algorithm, write an `Algorithm` with its parameters in a file of
+its own and add it to `All` in `registry.go`. The page builds its form from
+the parameters' descriptions.
+
 ## API
 
 `GET /api/algorithms` lists the algorithms with their parameters: name, type
