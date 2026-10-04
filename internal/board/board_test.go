@@ -32,13 +32,6 @@ func TestNewHexagonCells(t *testing.T) {
 	}
 }
 
-func abs(x int) int {
-	if x < 0 {
-		return -x
-	}
-	return x
-}
-
 func TestNeighbours(t *testing.T) {
 	b := NewHexagon(2)
 	index := b.Index()
@@ -59,6 +52,27 @@ func TestVisibility(t *testing.T) {
 	for edge := 1; edge <= 6; edge++ {
 		if got := NewHexagon(edge).Visibility(); got != edge-1 {
 			t.Errorf("NewHexagon(%d).Visibility() = %d, want %d", edge, got, edge-1)
+		}
+	}
+}
+
+func TestDistanceTo(t *testing.T) {
+	for _, tt := range []struct {
+		a, b Hex
+		want int
+	}{
+		{Hex{}, Hex{}, 0},
+		{Hex{}, Hex{Q: 1}, 1},
+		{Hex{}, Hex{Q: 1, R: -1}, 1},
+		{Hex{}, Hex{Q: 2, R: 1}, 3},
+		{Hex{Q: -4}, Hex{Q: 4}, 8},
+		{Hex{Q: -2, R: 3}, Hex{Q: 1, R: -1}, 4},
+	} {
+		if got := tt.a.DistanceTo(tt.b); got != tt.want {
+			t.Errorf("%v.DistanceTo(%v) = %d, want %d", tt.a, tt.b, got, tt.want)
+		}
+		if got := tt.b.DistanceTo(tt.a); got != tt.want {
+			t.Errorf("%v.DistanceTo(%v) = %d, want %d", tt.b, tt.a, got, tt.want)
 		}
 	}
 }

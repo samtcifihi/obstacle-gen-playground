@@ -2,6 +2,7 @@ package algorithm
 
 import (
 	"math"
+	"net/url"
 	"testing"
 
 	"github.com/samtcifihi/obstacle-gen-playground/internal/board"
@@ -234,6 +235,106 @@ func TestTripleBetaIsReproducible(t *testing.T) {
 	for i := range a.Cells {
 		if a.Cells[i] != b.Cells[i] {
 			t.Fatalf("same seed gave different boards at cell %d", i)
+		}
+	}
+}
+
+func TestNearestObstacle(t *testing.T) {
+	obstacles := []board.Hex{{Q: 0, R: 0}, {Q: 3, R: -1}}
+	for _, tt := range []struct {
+		h    board.Hex
+		want int
+	}{
+		{board.Hex{Q: 1}, 0},        // adjacent to the centre
+		{board.Hex{Q: 2, R: -1}, 0}, // adjacent to (3, -1)
+		{board.Hex{Q: -2, R: 0}, 1}, // one cell between it and the centre
+		{board.Hex{Q: -4, R: 4}, 3}, // a corner, 4 steps from the centre
+		{board.Hex{Q: -4, R: 0}, 3},
+		{board.Hex{Q: -9, R: 0}, 4}, // capped at visibility
+	} {
+		if got := nearestObstacle(tt.h, obstacles, 4); got != tt.want {
+			t.Errorf("nearestObstacle(%v) = %d, want %d", tt.h, got, tt.want)
+		}
+	}
+	if got := nearestObstacle(board.Hex{}, nil, 4); got != 4 {
+		t.Errorf("with no obstacles, distance = %d, want visibility 4", got)
+	}
+}
+
+func TestDistanceWeight(t *testing.T) {
+	// Distances 0 to 4 sit at 0.1, 0.3, 0.5, 0.7 and 0.9.
+	for d := 0; d <= 4; d++ {
+		x := (float64(d) + 0.5) / 5
+		if got := distanceWeight(d, 4, BetaShape{1, 1}); got != 1 {
+			t.Errorf("Beta(1, 1) at distance %d = %v, want 1", d, got)
+		}
+		if got, want := distanceWeight(d, 4, BetaShape{2, 2}), 6*x*(1-x); math.Abs(got-want) > 1e-12 {
+			t.Errorf("Beta(2, 2) at distance %d = %v, want %v", d, got, want)
+		}
+		if got := distanceWeight(d, 4, BetaShape{0.3, 0.3}); !isFinite(got) {
+			t.Errorf("Beta(0.3, 0.3) at distance %d = %v, want finite", d, got)
+		}
+	}
+}
+
+func TestTripleBetaRecordsDistances(t *testing.T) {
+	b := board.NewHexagon(5)
+	cfg := defaultTripleBetaConfig(t)
+	cfg.Distance = BetaShape{3, 1.5}
+	trace := TripleBeta(b, cfg, newRNG(5))
+	distance := metricIndex(t, trace, "distance")
+	var placed []board.Hex
+	for i, step := range trace.Steps {
+		for _, c := range step.Candidates {
+			if want := float64(nearestObstacle(c.Hex, placed, 4)); c.Values[distance] != want {
+				t.Fatalf("step %d: %v recorded distance %v, want %v", i, c.Hex, c.Values[distance], want)
+			}
+		}
+		placed = append(placed, step.Placed)
+	}
+	checkTrace(t, "triple beta", b, trace)
+}
+
+func TestTripleBetaDistanceShapes(t *testing.T) {
+	// Favouring large distances spreads obstacles out, favouring small ones
+	// clusters them, compared with the neutral Beta(1, 1).
+	adjacentPairs := func(shape BetaShape) float64 {
+		pairs := 0
+		const runs = 100
+		for seed := range uint64(runs) {
+			b := board.NewHexagon(5)
+			cfg := defaultTripleBetaConfig(t)
+			cfg.Distance = shape
+			TripleBeta(b, cfg, newRNG(seed))
+			g := grid{b: b, index: b.Index()}
+			for _, c := range b.Cells {
+				for _, n := range c.Neighbours() {
+					if _, obstacle := g.at(n); c.Obstacle && obstacle {
+						pairs++
+					}
+				}
+			}
+		}
+		return float64(pairs) / 2 / runs
+	}
+	spread, neutral, clustered := adjacentPairs(BetaShape{6, 1}), adjacentPairs(BetaShape{1, 1}), adjacentPairs(BetaShape{1, 6})
+	if !(spread < neutral && neutral < clustered) {
+		t.Errorf("adjacent pairs per board: Beta(6, 1) %.1f, Beta(1, 1) %.1f, Beta(1, 6) %.1f; want increasing", spread, neutral, clustered)
+	}
+}
+
+func TestParseObstaclesSymmetric(t *testing.T) {
+	a, _ := Lookup("triple_beta")
+	for _, tt := range []struct {
+		symmetric string
+		want      float64
+	}{{"false", 4}, {"true", 2}} {
+		v, err := a.Parse(url.Values{"is_obstacles_symmetric": {tt.symmetric}, "k_alpha_obstacles": {"2"}, "k_beta_obstacles": {"4"}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := v.Float("k_beta_obstacles"); got != tt.want {
+			t.Errorf("is_obstacles_symmetric=%s: k_beta_obstacles = %v, want %v", tt.symmetric, got, tt.want)
 		}
 	}
 }

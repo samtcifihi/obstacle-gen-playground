@@ -12,9 +12,9 @@ var tripleBetaAlgorithm = Algorithm{
 	ID:   "triple_beta",
 	Name: "Triple Beta",
 	Description: "Weights every hex by three beta densities, one for each cube coordinate (q, r, s), each " +
-		"scaled so the coordinate's range on the board runs from 0 to 1, multiplied together. Each obstacle goes " +
-		"on a free hex (no obstacle, and not making a bank too big) picked with probability proportional to its " +
-		"weight.",
+		"scaled so the coordinate's range on the board runs from 0 to 1, multiplied together, and by a fourth " +
+		"beta density over its distance to the nearest obstacle. Each obstacle goes on a free hex (no obstacle, " +
+		"and not making a bank too big) picked with probability proportional to its weight.",
 	Params: slices.Concat(
 		[]Param{
 			{Name: "k_obstacles", Group: "General", Type: Int, Default: 16,
@@ -22,7 +22,7 @@ var tripleBetaAlgorithm = Algorithm{
 			{Name: "k_max_bank", Group: "General", Type: Int, Default: 0,
 				Description: "Maximum contiguous group of obstacles allowed (0 = no limit)"},
 			{Name: "is_symmetric", Group: "Distributions", Type: Bool, Default: true,
-				Description: "Force α = β for each distribution, so each is symmetric about the centre"},
+				Description: "Force α = β for each axis's distribution, so each is symmetric about the centre"},
 			{Name: "is_axes_shared", Group: "Distributions", Type: Bool, Default: true,
 				Description: "Force all 3 distributions to use axis 1's α and β"},
 			{Name: "is_inset", Group: "Distributions", Type: Bool, Default: true,
@@ -33,6 +33,17 @@ var tripleBetaAlgorithm = Algorithm{
 		axisParams(1, "q", "lower left edge", "upper right edge"),
 		axisParams(2, "r", "top edge", "bottom edge"),
 		axisParams(3, "s", "lower right edge", "upper left edge"),
+		[]Param{
+			{Name: "is_obstacles_symmetric", Group: "Distance to obstacles", Type: Bool, Default: false,
+				Description: "Force α = β for the distance distribution"},
+			{Name: "k_alpha_obstacles", Group: "Distance to obstacles", Type: Float, Default: 1.0, MinExclusive: true,
+				Description: "α of the beta distribution over distance to the nearest obstacle: raising it favours " +
+					"being far from obstacles, spreading them out"},
+			{Name: "k_beta_obstacles", Group: "Distance to obstacles", Type: Float, Default: 1.0, MinExclusive: true,
+				Follows: []Follow{{When: "is_obstacles_symmetric", Param: "k_alpha_obstacles"}},
+				Description: "β of the beta distribution over distance to the nearest obstacle: raising it favours " +
+					"being close to obstacles, clustering them"},
+		},
 	),
 	run: func(b *board.Board, v Values, rng *rand.Rand) Trace {
 		return TripleBeta(b, tripleBetaConfig(v), rng)
@@ -64,6 +75,10 @@ func tripleBetaConfig(v Values) TripleBetaConfig {
 		Obstacles: v.Int("k_obstacles"),
 		MaxBank:   v.Int("k_max_bank"),
 		Inset:     v.Bool("is_inset"),
+		Distance: BetaShape{
+			Alpha: v.Float("k_alpha_obstacles"),
+			Beta:  v.Float("k_beta_obstacles"),
+		},
 	}
 	for i := range cfg.Axes {
 		cfg.Axes[i] = BetaShape{
@@ -82,6 +97,9 @@ type TripleBetaConfig struct {
 	// Axes holds the shape of the distribution over each cube coordinate:
 	// q, r and s.
 	Axes [3]BetaShape
+	// Distance is the shape of the distribution over distance to the
+	// nearest obstacle (k_alpha_obstacles, k_beta_obstacles).
+	Distance BetaShape
 }
 
 // BetaShape holds the parameters of a beta distribution.
@@ -89,41 +107,59 @@ type BetaShape struct {
 	Alpha, Beta float64
 }
 
-// TripleBeta places obstacles on b one at a time. Each cell has a fixed
-// weight (see hexWeights), and each obstacle goes on a free cell, one
-// without an obstacle where one wouldn't make a bank bigger than MaxBank,
-// picked with probability proportional to its weight.
+// TripleBeta places obstacles on b one at a time. Each cell's weight is its
+// position weight (see hexWeights), which is fixed, times its distance
+// weight, which is recalculated each round: the density of cfg.Distance at
+// the cell's distance to the nearest obstacle (see distanceWeight). Each
+// obstacle goes on a free cell, one without an obstacle where one wouldn't
+// make a bank bigger than MaxBank, picked with probability proportional to
+// its weight.
 //
 // It stops once it has placed cfg.Obstacles obstacles or no free cell has
 // any weight. The trace has a step for each obstacle placed, recording
-// each cell that could have taken it with its chance and weight.
+// each cell that could have taken it with its chance, weights and distance.
 func TripleBeta(b *board.Board, cfg TripleBetaConfig, rng *rand.Rand) Trace {
 	g := grid{b: b, index: b.Index()}
-	weights := hexWeights(b, cfg.Axes, cfg.Inset)
+	visibility := b.Visibility()
+	positions := hexWeights(b, cfg.Axes, cfg.Inset)
 	trace := Trace{Metrics: tripleBetaMetrics}
-	if slices.ContainsFunc(weights, func(w float64) bool { return !isFinite(w) }) {
+	if slices.ContainsFunc(positions, func(w float64) bool { return !isFinite(w) }) {
 		trace.Note = "some hexes have infinite weight (a beta density with α or β below 1 is infinite at the " +
 			"board's edges); turn on is_inset"
 		return trace
 	}
 
+	type option struct {
+		cell                   int
+		distance               int
+		distanceWeight, weight float64
+	}
 	for len(trace.Steps) < cfg.Obstacles {
 		banks := g.banks()
-		var open []int
-		var openWeights []float64
-		openWeight, anyFree := 0.0, false
+		var obstacles []board.Hex
+		for _, c := range b.Cells {
+			if c.Obstacle {
+				obstacles = append(obstacles, c.Hex)
+			}
+		}
+
+		var options []option
+		var weights []float64
+		total, anyFree := 0.0, false
 		for i, c := range b.Cells {
 			if c.Obstacle || (cfg.MaxBank > 0 && banks.sizeWith(g, c.Hex) > cfg.MaxBank) {
 				continue
 			}
 			anyFree = true
-			if weights[i] > 0 {
-				open = append(open, i)
-				openWeights = append(openWeights, weights[i])
-				openWeight += weights[i]
+			d := nearestObstacle(c.Hex, obstacles, visibility)
+			dw := distanceWeight(d, visibility, cfg.Distance)
+			if w := positions[i] * dw; w > 0 {
+				options = append(options, option{cell: i, distance: d, distanceWeight: dw, weight: w})
+				weights = append(weights, w)
+				total += w
 			}
 		}
-		if len(open) == 0 {
+		if len(options) == 0 {
 			trace.Note = "no free cell left"
 			if anyFree {
 				trace.Note = "no free cell has any weight"
@@ -131,12 +167,15 @@ func TripleBeta(b *board.Board, cfg TripleBetaConfig, rng *rand.Rand) Trace {
 			break
 		}
 
-		pick := open[weightedIndex(rng, openWeights, openWeight)]
+		pick := options[weightedIndex(rng, weights, total)].cell
 		b.Cells[pick].Obstacle = true
 
-		step := Step{Placed: b.Cells[pick].Hex, Candidates: make([]Candidate, len(open))}
-		for j, i := range open {
-			step.Candidates[j] = Candidate{Hex: b.Cells[i].Hex, Values: []float64{weights[i] / openWeight, weights[i]}}
+		step := Step{Placed: b.Cells[pick].Hex, Candidates: make([]Candidate, len(options))}
+		for j, o := range options {
+			step.Candidates[j] = Candidate{
+				Hex:    b.Cells[o.cell].Hex,
+				Values: []float64{o.weight / total, o.weight, positions[o.cell], float64(o.distance), o.distanceWeight},
+			}
 		}
 		trace.Steps = append(trace.Steps, step)
 	}
@@ -147,7 +186,28 @@ func TripleBeta(b *board.Board, cfg TripleBetaConfig, rng *rand.Rand) Trace {
 // could take an obstacle.
 var tripleBetaMetrics = []Metric{
 	{Name: "chance", Description: "Chance of getting this obstacle", Percent: true},
-	{Name: "weight", Description: "Weight (product of the three densities)"},
+	{Name: "weight", Description: "Weight (position weight × distance weight)"},
+	{Name: "position", Description: "Position weight (product of the three axis densities)"},
+	{Name: "distance", Description: "Distance to the nearest obstacle (capped at visibility)", Integer: true},
+	{Name: "distance_weight", Description: "Distance weight (density at the scaled distance)"},
+}
+
+// nearestObstacle returns the number of cells between h and the nearest of
+// obstacles, so 0 if one is adjacent, capped at visibility. With no
+// obstacles it's visibility.
+func nearestObstacle(h board.Hex, obstacles []board.Hex, visibility int) int {
+	d := visibility
+	for _, o := range obstacles {
+		d = min(d, h.DistanceTo(o)-1)
+	}
+	return d
+}
+
+// distanceWeight returns the density of shape at distance d, which runs
+// from 0 to visibility, scaled into (0, 1) as the middle of its band,
+// (d + ½)/(visibility + 1), so the density is never infinite.
+func distanceWeight(d, visibility int, shape BetaShape) float64 {
+	return betaPDF((float64(d)+0.5)/float64(visibility+1), shape.Alpha, shape.Beta)
 }
 
 // hexWeights returns the weight of each cell of b: the product of the beta

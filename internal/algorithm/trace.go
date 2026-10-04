@@ -19,6 +19,8 @@ type Metric struct {
 	Description string `json:"description"`
 	// Percent marks a value between 0 and 1 that reads best as a percentage.
 	Percent bool `json:"percent,omitempty"`
+	// Integer marks a value that's always a whole number.
+	Integer bool `json:"integer,omitempty"`
 }
 
 // Step records the placement of one obstacle.

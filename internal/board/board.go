@@ -21,6 +21,19 @@ func (h Hex) Add(o Hex) Hex {
 	return Hex{Q: h.Q + o.Q, R: h.R + o.R}
 }
 
+// DistanceTo returns the number of steps from h to o.
+func (h Hex) DistanceTo(o Hex) int {
+	dq, dr := h.Q-o.Q, h.R-o.R
+	return max(abs(dq), abs(dr), abs(dq+dr))
+}
+
+func abs(x int) int {
+	if x < 0 {
+		return -x
+	}
+	return x
+}
+
 // Neighbours returns the six hexes adjacent to h.
 func (h Hex) Neighbours() [6]Hex {
 	var ns [6]Hex

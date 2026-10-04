@@ -88,8 +88,10 @@ board of radius R):
 2. Weight each hex by the product of the three beta densities at its scaled
    coordinates: `w = f_q(Q) · f_r(R') · f_s(S)`, using `k_alpha_1`/`k_beta_1`
    for `q`, `_2` for `r` and `_3` for `s`.
-3. Put the obstacle on a free hex (no obstacle, and not making a bank bigger
-   than `k_max_bank`), picked with probability `w / Σw` over the free hexes.
+3. Each round, multiply that by a distance weight (see Distance to obstacles
+   below), then put the obstacle on a free hex (no obstacle, and not making a
+   bank bigger than `k_max_bank`), picked with probability proportional to its
+   weight over the free hexes.
 
 Equal coordinate values form parallel bands across the board, so each
 distribution sets how much each band of one family is favoured:
@@ -105,8 +107,27 @@ symmetry. `is_symmetric` forces α = β for each axis, and `is_axes_shared` make
 axes 2 and 3 use axis 1's α and β. Forced values show locked, the same way as
 Evolved's `f_a'`.
 
+**Distance to obstacles.** A fourth beta distribution (`k_alpha_obstacles`,
+`k_beta_obstacles`) sets how far from existing obstacles new ones like to be.
+Each round, each free hex's distance `d` is the number of cells between it and
+the nearest obstacle (0 if adjacent, the same convention as Evolved), capped at
+`visibility` V (4 here). With no obstacles yet, every hex is at V. Like the
+coordinates, it's scaled to the middle of its band, `(d + ½)/(V + 1)`, so α or
+β < 1 can't make it infinite, and the hex's weight is multiplied by the density
+there.
+
+- Beta(1, 1) is neutral.
+- α > β favours larger distances, spreading obstacles out.
+- β > α favours smaller distances, clustering them.
+- α = β > 1 favours middling distances, and α = β < 1 favours both extremes.
+
+On this board, with 16 obstacles and flat positions, Beta(1, 1) leaves about 10
+pairs of adjacent obstacles per board, Beta(6, 1) about 1 and Beta(1, 6) about
+19. `is_obstacles_symmetric` (off by default) forces α = β.
+
 It stops after placing `k_obstacles` obstacles or when no free hex has any
-weight. The heatmap's chances are exact.
+weight. The heatmap's chances are exact, and it can also show each hex's
+position weight, distance and distance weight.
 
 **Edges.** `is_inset` (on by default) scales each coordinate to the middle of
 its band, so the board's edges sit just inside (0, 1). With it off, they're at

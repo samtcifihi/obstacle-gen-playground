@@ -124,8 +124,16 @@ function rgb(hex) {
   return [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
 }
 
+// formatValue shows a metric's value. Small values that aren't 0 shouldn't
+// look like 0.
 function formatValue(metric, value) {
-  return metric.percent ? `${(value * 100).toFixed(1)}%` : value.toFixed(3);
+  if (metric.percent) {
+    return value > 0 && value < 0.0005 ? "<0.1%" : `${(value * 100).toFixed(1)}%`;
+  }
+  if (metric.integer) {
+    return String(value);
+  }
+  return value !== 0 && Math.abs(value) < 0.001 ? value.toExponential(2) : value.toFixed(3);
 }
 
 // frameState works out what each cell is at the current frame.
