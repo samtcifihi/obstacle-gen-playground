@@ -38,3 +38,27 @@ func abs(x int) int {
 	}
 	return x
 }
+
+func TestNeighbours(t *testing.T) {
+	b := NewHexagon(2)
+	index := b.Index()
+	seen := make(map[Hex]bool)
+	for _, n := range (Hex{}).Neighbours() {
+		if _, ok := index[n]; !ok || n == (Hex{}) || seen[n] {
+			t.Errorf("neighbour %v of the centre isn't a distinct one of the ring around it", n)
+		}
+		seen[n] = true
+	}
+	// The centre and its six neighbours are the whole edge-length-2 board.
+	if len(b.Cells) != 7 {
+		t.Fatalf("board has %d cells, want 7", len(b.Cells))
+	}
+}
+
+func TestVisibility(t *testing.T) {
+	for edge := 1; edge <= 6; edge++ {
+		if got := NewHexagon(edge).Visibility(); got != edge {
+			t.Errorf("NewHexagon(%d).Visibility() = %d, want %d", edge, got, edge)
+		}
+	}
+}

@@ -8,6 +8,7 @@ import (
 	"math/rand/v2"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/samtcifihi/obstacle-gen-playground/internal/algorithm"
 	"github.com/samtcifihi/obstacle-gen-playground/internal/board"
@@ -31,21 +32,39 @@ func newHandler() http.Handler {
 		panic(err)
 	}
 	mux := http.NewServeMux()
+	mux.HandleFunc("GET /api/algorithms", handleAlgorithms)
 	mux.HandleFunc("GET /api/generate", handleGenerate)
 	mux.Handle("GET /", http.FileServerFS(static))
 	return mux
 }
 
+// handleAlgorithms lists the algorithms and their parameters.
+func handleAlgorithms(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, algorithm.All)
+}
+
 // handleGenerate builds a board and places obstacles on it. Query
 // parameters:
 //
-//	n     number of obstacles to place (required, >= 0)
-//	seed  random seed (optional; a random one is chosen and returned if omitted)
+//	algorithm  ID of the algorithm to use (required)
+//	seed       random seed (optional; a random one is chosen and returned if omitted)
+//
+// plus the algorithm's own parameters, which take their defaults if
+// omitted.
 func handleGenerate(w http.ResponseWriter, r *http.Request) {
 	query := r.URL.Query()
-	n, err := strconv.Atoi(query.Get("n"))
-	if err != nil || n < 0 {
-		http.Error(w, "n must be a non-negative integer", http.StatusBadRequest)
+	alg, ok := algorithm.Lookup(query.Get("algorithm"))
+	if !ok {
+		ids := make([]string, len(algorithm.All))
+		for i, a := range algorithm.All {
+			ids[i] = a.ID
+		}
+		http.Error(w, "algorithm must be one of: "+strings.Join(ids, ", "), http.StatusBadRequest)
+		return
+	}
+	params, err := alg.Parse(query)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 	// Random seeds are kept to 32 bits so they're easy to note down.
@@ -59,10 +78,13 @@ func handleGenerate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	b := board.NewHexagon(boardEdgeLength)
-	placed := algorithm.Uniform(b, n, rand.New(rand.NewPCG(seed, 0)))
+	placed := alg.Run(b, params, rand.New(rand.NewPCG(seed, 0)))
+	writeJSON(w, generateResponse{Seed: seed, Placed: placed, Board: b})
+}
 
+func writeJSON(w http.ResponseWriter, v any) {
 	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(generateResponse{Seed: seed, Placed: placed, Board: b}); err != nil {
+	if err := json.NewEncoder(w).Encode(v); err != nil {
 		log.Printf("writing response: %v", err)
 	}
 }

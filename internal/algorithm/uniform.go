@@ -7,6 +7,18 @@ import (
 	"github.com/samtcifihi/obstacle-gen-playground/internal/board"
 )
 
+var uniformAlgorithm = Algorithm{
+	ID:          "uniform",
+	Name:        "Uniform random",
+	Description: "Places n obstacles, each on an empty cell chosen with equal probability.",
+	Params: []Param{
+		{Name: "n", Type: Int, Default: 10, Description: "The number of obstacles to place (if possible)"},
+	},
+	run: func(b *board.Board, v Values, rng *rand.Rand) int {
+		return Uniform(b, v.Int("n"), rng)
+	},
+}
+
 // Uniform places n obstacles on b, each on an empty cell chosen uniformly
 // at random from the cells still empty. If n is at least the number of
 // empty cells, every cell ends up with an obstacle. It returns the number

@@ -4,14 +4,59 @@ A small browser app for trying out algorithms that place random obstacles on
 game boards.
 
 The board is currently a hexagon of hexes with edge length 5 (61 hexes), with
-one obstacle type and one algorithm:
+one obstacle type. Pick an algorithm, tweak its parameters, and the board
+regenerates as you go. The settings are kept in the address bar, so reloading
+or sharing the page keeps them.
 
-- **Uniform random** — places `n` obstacles, each on an empty hex chosen with
-  equal probability. If `n` is at least the number of empty hexes, the board
-  ends up full.
+Each generation uses a seed, shown above the board. Click "reuse" (or type a
+seed) to keep it fixed while you tweak parameters; leave the seed box empty for
+a new random board each time.
 
-Each generation uses a seed, shown under the controls. Enter it in the seed box
-to reproduce a board; leave the box empty for a new random one.
+## Algorithms
+
+### Uniform random
+
+Places `n` obstacles, each on an empty hex chosen with equal probability. If
+`n` is at least the number of empty hexes, the board ends up full.
+
+### Scored
+
+Places obstacles one at a time. Each round:
+
+1. Empty cells start with a score of 0. Obstacles have no score, so they're
+   ignored and can't be chosen.
+2. Cells where an obstacle would make a bank (contiguous group of obstacles)
+   bigger than `k_max_bank` have no score (`0` = no limit).
+3. For each of the six directions, count the empty cells before an obstacle,
+   up to `visibility`. The edge of the board doesn't block, so a direction with
+   no obstacle within `visibility` counts as `visibility`. Combine the counts
+   with the obstacle conjugate (below), divide by `visibility`, and add to the
+   score.
+4. For each of the six directions, count the empty cells before the edge of
+   the board (obstacles on the way are skipped, not counted). Combine with the
+   edge conjugate, divide by `visibility`, and add.
+5. Add `(s - 0.5) * k_beta_coef`, with `s` drawn from Beta(`k_beta`,
+   `k_beta`).
+6. If `is_stretching`, map each score `s` to `e^(k_stretch * (s - max))`;
+   otherwise to `s + 1 - min`. Either way every score is positive, and with
+   stretching the best cell gets 1.
+7. If `is_weighted`, place an obstacle on a random cell weighted by score;
+   otherwise on the highest-scoring cell, breaking ties randomly.
+
+It stops after placing `k_obstacles` obstacles or when no cell has a score.
+
+**Conjugates.** Steps 3 and 4 reduce the six counts, `[[a, b], [c, d], [e, f]]`
+grouped by axis, to one number. Flattened, that's
+`f_a'(f_b(f_a(a), …, f_a(f)))`. Otherwise it's
+`f_a'(f_dir(f_b(f_a(a), f_a(b)), f_b(f_a(c), f_a(d)), f_b(f_a(e), f_a(f))))`.
+With `f_a'` the inverse of `f_a`, this is a generalised mean: the defaults
+(`2 root`, `mean`, `2 ^`) give the power mean with exponent ½.
+
+**Visibility** is the furthest distance from the board's centre cell to the
+edge of an empty board: the most steps it takes to walk off the board from the
+centre in a straight line. On a hexagon that's its edge length, so 5 here: the
+centre cell plus 4 more cells before the rim. Since the centre has 4 empty cells
+between it and the edge, its step 4 term on an empty board is 4/5.
 
 ## Running
 
@@ -30,7 +75,11 @@ Without just: `go run .` (flags: `-addr`, `-open`).
 
 ## API
 
-`GET /api/generate?n=<count>[&seed=<seed>]` returns the generated board:
+`GET /api/algorithms` lists the algorithms with their parameters: name, type
+(`int`, `float`, `bool` or `choice`), default, minimum and options.
+
+`GET /api/generate?algorithm=<id>[&seed=<seed>][&<param>=<value>...]` returns a
+generated board. Parameters that are left out take their defaults.
 
 ```json
 {
