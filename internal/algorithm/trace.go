@@ -9,6 +9,8 @@ type Trace struct {
 	Metrics []Metric `json:"metrics"`
 	// Steps has one entry per obstacle placed, in order.
 	Steps []Step `json:"steps"`
+	// Note says why the algorithm stopped early, if it did.
+	Note string `json:"note,omitempty"`
 }
 
 // Metric describes a value recorded for candidate cells.
@@ -24,6 +26,9 @@ type Step struct {
 	Placed board.Hex `json:"placed"`
 	// Candidates are the cells the obstacle could have been placed on.
 	Candidates []Candidate `json:"candidates"`
+	// Tries is how many attempts placing the obstacle took, for algorithms
+	// that can miss.
+	Tries int `json:"tries,omitempty"`
 }
 
 // Candidate is a cell that could have been chosen, with a value for each of

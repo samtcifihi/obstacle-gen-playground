@@ -5,18 +5,32 @@ import (
 	"math"
 	"math/rand/v2"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 
 	"github.com/samtcifihi/obstacle-gen-playground/internal/board"
 )
 
-// All lists the available algorithms, in the order a UI should offer them.
-var All = []Algorithm{uniformAlgorithm, evolvedAlgorithm}
+// Algorithms returns the available algorithms, in the order a UI should
+// offer them, with any defaults that depend on the board worked out for b.
+func Algorithms(b *board.Board) []Algorithm {
+	algs := []Algorithm{uniformAlgorithm, evolvedAlgorithm, tripleBetaAlgorithm}
+	for i, a := range algs {
+		params := slices.Clone(a.Params)
+		for j, p := range params {
+			if p.boardDefault != nil {
+				params[j].Default = p.boardDefault(b)
+			}
+		}
+		algs[i].Params = params
+	}
+	return algs
+}
 
-// Lookup returns the algorithm with the given ID.
-func Lookup(id string) (Algorithm, bool) {
-	for _, a := range All {
+// Lookup returns the algorithm in algs with the given ID.
+func Lookup(algs []Algorithm, id string) (Algorithm, bool) {
+	for _, a := range algs {
 		if a.ID == id {
 			return a, true
 		}
@@ -41,11 +55,17 @@ func (a Algorithm) Run(b *board.Board, v Values, rng *rand.Rand) Trace {
 }
 
 // Parse reads a's parameters from q, using the default for any that are
-// missing.
+// missing. A parameter that's following another (see Param.Follows) takes
+// that parameter's value, whatever q says.
 func (a Algorithm) Parse(q url.Values) (Values, error) {
 	v := make(Values, len(a.Params))
 	for _, p := range a.Params {
-		if p.InverseOf != "" {
+		if f, ok := p.following(v); ok {
+			if f.Inverse {
+				v[p.Name] = a.inverse(f.Param, v.Choice(f.Param))
+			} else {
+				v[p.Name] = v[f.Param]
+			}
 			continue
 		}
 		if !q.Has(p.Name) {
@@ -57,12 +77,6 @@ func (a Algorithm) Parse(q url.Values) (Values, error) {
 			return nil, err
 		}
 		v[p.Name] = value
-	}
-	// Parameters that mirror another can't be set directly.
-	for _, p := range a.Params {
-		if p.InverseOf != "" {
-			v[p.Name] = a.inverse(p.InverseOf, v.Choice(p.InverseOf))
-		}
 	}
 	return v, nil
 }
@@ -110,9 +124,36 @@ type Param struct {
 	// OnlyIf names a Bool parameter that must be true for this one to have
 	// any effect, or false if the name is prefixed with "!".
 	OnlyIf string `json:"onlyIf,omitempty"`
-	// InverseOf names a Choice parameter that this one mirrors: its value is
-	// always the Inverse of that parameter's option, and can't be set.
-	InverseOf string `json:"inverseOf,omitempty"`
+	// Follows lists other parameters this one takes its value from. The
+	// first whose condition holds applies, and while one does, this
+	// parameter can't be set directly.
+	Follows []Follow `json:"follows,omitempty"`
+
+	// boardDefault, if set, works out Default for a board.
+	boardDefault func(b *board.Board) any
+}
+
+// Follow makes a parameter take another's value while a condition holds.
+type Follow struct {
+	// When names a Bool parameter that must be true, or false if prefixed
+	// with "!". Empty means always.
+	When string `json:"when,omitempty"`
+	// Param names the parameter to take the value of. It and When's
+	// parameter must come earlier in the list.
+	Param string `json:"param"`
+	// Inverse takes the Inverse of Param's chosen option instead.
+	Inverse bool `json:"inverse,omitempty"`
+}
+
+// following returns the Follow that applies to p given the values parsed
+// so far, if any.
+func (p Param) following(v Values) (Follow, bool) {
+	for _, f := range p.Follows {
+		if f.When == "" || v.Bool(strings.TrimPrefix(f.When, "!")) != strings.HasPrefix(f.When, "!") {
+			return f, true
+		}
+	}
+	return Follow{}, false
 }
 
 // Option is one value of a Choice parameter.
@@ -120,7 +161,7 @@ type Option struct {
 	Value string `json:"value"`
 	Label string `json:"label"`
 	// Inverse is the value of the option that undoes this one, for
-	// parameters that mirror this one with InverseOf.
+	// parameters that follow this one with Follow.Inverse.
 	Inverse string `json:"inverse,omitempty"`
 }
 

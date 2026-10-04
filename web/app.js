@@ -173,9 +173,13 @@ function showFrame() {
 
   frameInput.max = total;
   frameInput.value = view.frame;
-  frameLabel.textContent = step
-    ? `Choosing obstacle ${view.frame + 1} of ${total}`
-    : `Final board · ${total} obstacle${total === 1 ? "" : "s"}`;
+  if (step) {
+    const tries = step.tries ? ` · took ${step.tries} ${step.tries === 1 ? "try" : "tries"}` : "";
+    frameLabel.textContent = `Choosing obstacle ${view.frame + 1} of ${total}${tries}`;
+  } else {
+    const note = trace.note ? ` · ${trace.note}` : "";
+    frameLabel.textContent = `Final board · ${total} obstacle${total === 1 ? "" : "s"}${note}`;
+  }
   metricSelect.disabled = !step;
   showLegend(step ? { metric, lo, hi, blocked } : null);
   cellInfo.textContent = view.hovered ? describeCell(view.hovered) : CELL_INFO_HINT;
@@ -284,11 +288,6 @@ function paramInput(alg, param) {
   }
   input.id = `param-${alg.id}-${param.name}`;
   input.name = param.name;
-  if (param.inverseOf) {
-    // Shown for reference; it always follows the parameter it inverts.
-    input.disabled = true;
-    input.classList.add("derived");
-  }
   return input;
 }
 
@@ -342,22 +341,33 @@ function buildPanel(alg, initial) {
   return panel;
 }
 
-// updateDependents disables parameters whose onlyIf condition doesn't hold
-// and sets each inverseOf parameter to the inverse of the one it follows.
+// holds reports whether a condition naming a bool parameter, optionally
+// negated with "!", is true. An empty condition always holds.
+function holds(panel, condition) {
+  if (!condition) {
+    return true;
+  }
+  return panel.inputs.get(condition.replace(/^!/, "")).checked !== condition.startsWith("!");
+}
+
+// updateDependents disables parameters whose onlyIf condition doesn't hold,
+// and locks parameters that are following another to that one's value.
+// Parameters only follow earlier ones, so one pass in order is enough.
 function updateDependents(panel) {
   const params = new Map(panel.alg.params.map((p) => [p.name, p]));
   for (const param of panel.alg.params) {
     const input = panel.inputs.get(param.name);
-    if (param.onlyIf) {
-      const negated = param.onlyIf.startsWith("!");
-      const flag = panel.inputs.get(param.onlyIf.replace(/^!/, "")).checked;
-      input.disabled = flag === negated;
-      input.closest(".param").classList.toggle("inactive", input.disabled);
+    const inactive = param.onlyIf ? !holds(panel, param.onlyIf) : false;
+    const follow = param.follows?.find((f) => holds(panel, f.when));
+    if (follow) {
+      const value = panel.inputs.get(follow.param).value;
+      input.value = follow.inverse
+        ? params.get(follow.param).options.find((o) => o.value === value)?.inverse ?? ""
+        : value;
     }
-    if (param.inverseOf) {
-      const value = panel.inputs.get(param.inverseOf).value;
-      input.value = params.get(param.inverseOf).options.find((o) => o.value === value)?.inverse ?? "";
-    }
+    input.disabled = inactive || Boolean(follow);
+    input.classList.toggle("derived", Boolean(follow));
+    input.closest(".param").classList.toggle("inactive", inactive);
   }
 }
 
@@ -375,9 +385,10 @@ function query() {
   const { alg, inputs } = currentPanel();
   const params = new URLSearchParams({ algorithm: alg.id });
   for (const param of alg.params) {
-    // The server works out inverseOf parameters itself.
-    if (!param.inverseOf) {
-      params.set(param.name, getValue(inputs.get(param.name), param));
+    // The server works out parameters that are following another itself.
+    const input = inputs.get(param.name);
+    if (!input.classList.contains("derived")) {
+      params.set(param.name, getValue(input, param));
     }
   }
   const seed = seedInput.value.trim();

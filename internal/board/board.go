@@ -1,6 +1,8 @@
 // Package board models game boards made of hexes.
 package board
 
+import "math"
+
 // Hex is a hex position in axial coordinates. The implicit third cube
 // coordinate is s = -q - r.
 type Hex struct {
@@ -86,4 +88,21 @@ func (b *Board) Visibility() int {
 		visibility = max(visibility, cells)
 	}
 	return visibility
+}
+
+// Round returns the hex containing the point at fractional axial
+// coordinates (q, r).
+func Round(q, r float64) Hex {
+	s := -q - r
+	rq, rr, rs := math.Round(q), math.Round(r), math.Round(s)
+	// Rounding all three can break q + r + s = 0; recompute whichever moved
+	// furthest from the others.
+	dq, dr, ds := math.Abs(rq-q), math.Abs(rr-r), math.Abs(rs-s)
+	switch {
+	case dq > dr && dq > ds:
+		rq = -rr - rs
+	case dr > ds:
+		rr = -rq - rs
+	}
+	return Hex{Q: int(rq), R: int(rr)}
 }

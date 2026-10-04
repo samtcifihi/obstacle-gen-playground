@@ -55,7 +55,8 @@ func conjugateParams(term, group string) []Param {
 			Description: "The second function of the conjugate"},
 		{Name: "f_" + term + "_dir", Group: group, Type: Choice, Default: "mean", Options: aggregateOptions, OnlyIf: "!" + flattened,
 			Description: "Converts the 3 axes to a single number"},
-		{Name: "f_" + term + "_a'", Group: group, Type: Choice, Default: "square", Options: scalarOptions, InverseOf: "f_" + term + "_a",
+		{Name: "f_" + term + "_a'", Group: group, Type: Choice, Default: "square", Options: scalarOptions,
+			Follows:     []Follow{{Param: "f_" + term + "_a", Inverse: true}},
 			Description: "The third function of the conjugate: the inverse of the first, set automatically"},
 	}
 }
@@ -257,6 +258,7 @@ func Evolved(b *board.Board, cfg EvolvedConfig, rng *rand.Rand) Trace {
 			cells = append(cells, sc)
 		}
 		if len(cells) == 0 {
+			trace.Note = "no cell had a score"
 			break
 		}
 

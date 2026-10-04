@@ -77,6 +77,18 @@ func TestGenerateEvolved(t *testing.T) {
 	}
 }
 
+func TestGenerateTripleBeta(t *testing.T) {
+	resp := generate(t, "algorithm=triple_beta&k_obstacles=10&is_axes_shared=false&k_alpha_2=3")
+	if resp.Placed != 10 || countObstacles(resp.Board) != 10 {
+		t.Errorf("placed = %d with %d on the board, want 10", resp.Placed, countObstacles(resp.Board))
+	}
+	for _, step := range resp.Trace.Steps {
+		if step.Tries < 1 {
+			t.Errorf("step placing %v records %d tries", step.Placed, step.Tries)
+		}
+	}
+}
+
 func TestGenerateFillsBoard(t *testing.T) {
 	resp := generate(t, "algorithm=uniform&n=1000")
 	if resp.Placed != len(resp.Board.Cells) {
@@ -107,6 +119,8 @@ func TestGenerateRejectsBadParams(t *testing.T) {
 		"algorithm=uniform&n=3&seed=x",
 		"algorithm=evolved&k_beta=0",
 		"algorithm=evolved&f_edge_b=mode",
+		"algorithm=triple_beta&is_symmetric=false&k_beta_1=0",
+		"algorithm=triple_beta&k_max_tries=-1",
 	} {
 		if rec := get(t, "/api/generate?"+query); rec.Code != http.StatusBadRequest {
 			t.Errorf("GET /api/generate?%s: status %d, want %d", query, rec.Code, http.StatusBadRequest)
@@ -126,8 +140,8 @@ func TestAlgorithms(t *testing.T) {
 	if err := json.NewDecoder(rec.Body).Decode(&algs); err != nil {
 		t.Fatalf("decoding response: %v", err)
 	}
-	if len(algs) != 2 || algs[0].ID != "uniform" || algs[1].ID != "evolved" {
-		t.Fatalf("algorithms = %+v, want uniform then evolved", algs)
+	if len(algs) != 3 || algs[0].ID != "uniform" || algs[1].ID != "evolved" || algs[2].ID != "triple_beta" {
+		t.Fatalf("algorithms = %+v, want uniform, evolved and triple_beta", algs)
 	}
 	if n := len(algs[1].Params); n != 17 {
 		t.Errorf("evolved has %d parameters, want 17", n)

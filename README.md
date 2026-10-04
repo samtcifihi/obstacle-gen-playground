@@ -77,6 +77,46 @@ hexagon that's its edge length minus 1, so 4 here. On an empty board the centre
 therefore scores 1 for both distance terms. Step 4 counts aren't capped, so
 cells near a corner can score more than 1 in some directions (up to 8/4 here).
 
+### Triple Beta
+
+Places obstacles one at a time, by trying hexes until one can take the
+obstacle. Each try:
+
+1. Samples a position along each of the three axes through the centre, each
+   from its own beta distribution (`k_alpha_i`, `k_beta_i`). Each distribution
+   is scaled so that 0.5 is the centre cell and 0 and 1 are the outer edges of
+   the corner cells at either end of its axis:
+   - axis 1: left corner (0) to right corner (1)
+   - axis 2: top left corner to bottom right corner
+   - axis 3: bottom left corner to top right corner
+2. Lands on the hex whose positions along the three axes best match the
+   samples. Three positions over-determine a point on the page (two would do),
+   so this takes the least-squares fit: with the axes 60° apart, that's
+   2/3 × the sum of each sample times its axis direction. It's exactly the
+   right hex when the three samples agree, and the closest compromise when
+   they don't.
+3. Fails if that hex is off the board, already has an obstacle, or would make
+   a bank bigger than `k_max_bank`.
+
+It stops after placing `k_obstacles` obstacles, after `k_max_tries` tries in
+all (successful or not; default twice the number of cells), or when no cell
+could take an obstacle. Failed tries don't get their own steps, but each step
+says how many tries it took.
+
+`is_symmetric` forces α = β for each axis, and `is_axes_shared` makes axes 2
+and 3 use axis 1's α and β. Forced values show locked, the same way as
+Evolved's `f_a'`.
+
+Because inconsistent samples get averaged, obstacles lean towards the centre
+whatever the shape. Even U-shaped distributions (α = β < 1) mostly send tries
+off the board rather than to the rim. With α = β = 1 (uniform along each axis),
+a try lands on the centre cell about 2.6% of the time, on each rim cell about
+0.9%, and off the board about 15%.
+
+The heatmap's chances are estimated by evaluating a grid of quantiles of each
+distribution (96 per axis, each combination equally likely), rather than
+worked out exactly, which has no closed form.
+
 ## Running
 
 Requires [Go](https://go.dev/) 1.22+ and [just](https://github.com/casey/just).
@@ -122,7 +162,8 @@ generated board. Parameters that are left out take their defaults.
 ```
 
 The trace has one step per obstacle, in order. Each step lists the cells that
-could have been chosen, with one value per metric.
+could have been chosen, with one value per metric, and, for Triple Beta, how
+many tries it took. If the algorithm stopped early, `trace.note` says why.
 
 Cells use [axial coordinates](https://www.redblobgames.com/grids/hexagons/#coordinates-axial).
 The seed is a string because it can exceed JavaScript's safe integer range.

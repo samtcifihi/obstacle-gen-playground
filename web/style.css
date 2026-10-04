@@ -173,7 +173,7 @@ select {
   width: 10em;
 }
 
-.param select.derived:disabled {
+.param .derived:disabled {
   opacity: 1;
   border-style: dashed;
   background: transparent;

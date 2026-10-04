@@ -11,13 +11,14 @@ import (
 )
 
 func TestDefaultsAreValid(t *testing.T) {
-	for _, a := range All {
-		params := make(map[string]Param)
+	for _, a := range Algorithms(board.NewHexagon(5)) {
+		// Conditions and followed parameters must come earlier in the list,
+		// so Parse has their values by the time it needs them.
+		earlier := make(map[string]Param)
 		for _, p := range a.Params {
-			if _, dup := params[p.Name]; dup {
+			if _, dup := earlier[p.Name]; dup {
 				t.Errorf("%s: duplicate parameter %s", a.ID, p.Name)
 			}
-			params[p.Name] = p
 
 			got, err := p.parse(fmt.Sprint(p.Default))
 			if err != nil {
@@ -25,28 +26,94 @@ func TestDefaultsAreValid(t *testing.T) {
 			} else if got != p.Default {
 				t.Errorf("%s: default for %s is %#v, but parses as %#v", a.ID, p.Name, p.Default, got)
 			}
-		}
-		for _, p := range a.Params {
+
 			if p.OnlyIf != "" {
-				if on, ok := params[strings.TrimPrefix(p.OnlyIf, "!")]; !ok || on.Type != Bool {
-					t.Errorf("%s: %s is only used if %q, which isn't a bool parameter", a.ID, p.Name, p.OnlyIf)
+				if on, ok := earlier[strings.TrimPrefix(p.OnlyIf, "!")]; !ok || on.Type != Bool {
+					t.Errorf("%s: %s is only used if %q, which isn't an earlier bool parameter", a.ID, p.Name, p.OnlyIf)
 				}
 			}
-			if p.InverseOf != "" {
-				src, ok := params[p.InverseOf]
-				if !ok || src.Type != Choice {
-					t.Errorf("%s: %s is the inverse of %q, which isn't a choice parameter", a.ID, p.Name, p.InverseOf)
-					continue
-				}
-				if want := a.inverse(src.Name, src.Default.(string)); p.Default != want {
-					t.Errorf("%s: default for %s is %v, want %s, the inverse of %s's default", a.ID, p.Name, p.Default, want, src.Name)
-				}
-				for _, o := range src.Options {
-					if _, err := p.parse(o.Inverse); err != nil {
-						t.Errorf("%s: %s option %q has inverse %q, which isn't an option of %s", a.ID, src.Name, o.Value, o.Inverse, p.Name)
+			for _, f := range p.Follows {
+				if f.When != "" {
+					if on, ok := earlier[strings.TrimPrefix(f.When, "!")]; !ok || on.Type != Bool {
+						t.Errorf("%s: %s follows when %q, which isn't an earlier bool parameter", a.ID, p.Name, f.When)
 					}
 				}
+				src, ok := earlier[f.Param]
+				switch {
+				case !ok:
+					t.Errorf("%s: %s follows %q, which isn't an earlier parameter", a.ID, p.Name, f.Param)
+				case f.Inverse:
+					if src.Type != Choice {
+						t.Errorf("%s: %s follows the inverse of %s, which isn't a choice parameter", a.ID, p.Name, src.Name)
+						continue
+					}
+					if want := a.inverse(src.Name, src.Default.(string)); f.When == "" && p.Default != want {
+						t.Errorf("%s: default for %s is %v, want %s, the inverse of %s's default", a.ID, p.Name, p.Default, want, src.Name)
+					}
+					for _, o := range src.Options {
+						if _, err := p.parse(o.Inverse); err != nil {
+							t.Errorf("%s: %s option %q has inverse %q, which isn't an option of %s", a.ID, src.Name, o.Value, o.Inverse, p.Name)
+						}
+					}
+				case src.Type != p.Type:
+					t.Errorf("%s: %s follows %s, which has a different type", a.ID, p.Name, src.Name)
+				}
 			}
+			earlier[p.Name] = p
+		}
+	}
+}
+
+func TestBoardDefaults(t *testing.T) {
+	for _, edge := range []int{3, 5} {
+		b := board.NewHexagon(edge)
+		a, _ := Lookup(Algorithms(b), "triple_beta")
+		v, err := a.Parse(url.Values{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got, want := v.Int("k_max_tries"), 2*len(b.Cells); got != want {
+			t.Errorf("edge length %d: k_max_tries defaults to %d, want %d", edge, got, want)
+		}
+	}
+}
+
+func TestParseFollows(t *testing.T) {
+	a, _ := Lookup(Algorithms(board.NewHexagon(5)), "triple_beta")
+	parse := func(q url.Values) Values {
+		t.Helper()
+		v, err := a.Parse(q)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return v
+	}
+	shapes := func(v Values) [6]float64 {
+		var s [6]float64
+		for i := range 3 {
+			s[2*i] = v.Float(fmt.Sprintf("k_alpha_%d", i+1))
+			s[2*i+1] = v.Float(fmt.Sprintf("k_beta_%d", i+1))
+		}
+		return s
+	}
+	q := url.Values{
+		"k_alpha_1": {"1"}, "k_beta_1": {"2"},
+		"k_alpha_2": {"3"}, "k_beta_2": {"4"},
+		"k_alpha_3": {"5"}, "k_beta_3": {"6"},
+	}
+	for _, tt := range []struct {
+		symmetric, shared string
+		want              [6]float64
+	}{
+		{"false", "false", [6]float64{1, 2, 3, 4, 5, 6}},
+		{"true", "false", [6]float64{1, 1, 3, 3, 5, 5}},
+		{"false", "true", [6]float64{1, 2, 1, 2, 1, 2}},
+		{"true", "true", [6]float64{1, 1, 1, 1, 1, 1}},
+	} {
+		q.Set("is_symmetric", tt.symmetric)
+		q.Set("is_axes_shared", tt.shared)
+		if got := shapes(parse(q)); got != tt.want {
+			t.Errorf("is_symmetric=%s, is_axes_shared=%s: α, β = %v, want %v", tt.symmetric, tt.shared, got, tt.want)
 		}
 	}
 }
@@ -72,7 +139,7 @@ func TestOptionsHaveFuncs(t *testing.T) {
 }
 
 func TestRunWithDefaults(t *testing.T) {
-	for _, a := range All {
+	for _, a := range Algorithms(board.NewHexagon(5)) {
 		v, err := a.Parse(url.Values{})
 		if err != nil {
 			t.Fatalf("%s: %v", a.ID, err)
