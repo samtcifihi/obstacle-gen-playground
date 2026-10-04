@@ -151,11 +151,12 @@ to 2, low on that board's 0 to 7 scale, so clustering shapes need a larger β to
 pull hard. `is_obstacles_symmetric` (off by default) forces α = β.
 
 *Per axis.* Three more beta distributions, one for each cube coordinate, weigh
-how a hex's coordinate bands relate to those of existing obstacles. A hex's q
-distance is how far its q is from the nearest obstacle's, `d_q = min |q − q'|`
-over the obstacles, and the same for r and s. These count bands, not hex
-steps: `d_q = 0` means an obstacle shares the hex's q band, however far along
-it. On a board of radius R each runs from 0 to 2R (10 on the default board),
+the shape of the gap between a hex and its nearest obstacle. Each round, each
+free hex's nearest obstacle is found by hex distance, and the displacement
+between them is split into its coordinates: the q distance is
+`d_q = |q − q'|`, and the same for r and s. `d_q = 0` means the obstacle
+shares the hex's q band. The largest of the three is the hex distance, and
+the other two add up to it. Each runs from 0 to 2R (10 on the default board),
 and like the coordinates scales to the middle of its band, `(d + ½)/(2R + 1)`.
 The distance weight is the product of the three densities there:
 
@@ -164,22 +165,41 @@ w = position weight × f_q(d_q) × f_r(d_r) × f_s(d_s)
 ```
 
 using `k_alpha_obstacles_1`/`k_beta_obstacles_1` for q, `_2` for r and `_3`
-for s. So the position distributions say where on the board obstacles go, and
-these say how their bands relate to the bands already taken. For each axis,
-raising α favours bands far from obstacles', raising β favours bands at or
-near them, and Beta(1, 1) makes the axis neutral. For example, q Beta(5, 1),
-r Beta(1, 5) and s Beta(1, 1) favour new q bands and r bands near taken ones,
-and don't mind about s. `is_obstacle_axes_symmetric` forces α = β for each
-axis, and `is_obstacle_axes_shared` (on by default) makes axes 2 and 3 use
-axis 1's α and β, the same way as the position distributions' controls. With
-no obstacles yet the term is left out: every axis weight is 1, and the
-heatmap shows each distance as 2R.
+for s. If several obstacles are equally near, the distance weight is the mean
+of their products, so it doesn't depend on which comes first. The heatmap and
+hover text then show the means of their q, r and s distances and weights,
+which can be fractions (and the distance weight shown is the mean of the
+products, not the product of the means).
 
-Tying the three axes isn't the same as aggregate mode. Seen from an obstacle,
-a hex 2 steps away along a line, like (2, −2), is (2, 2, 0) away in q, r and
-s, sharing its s band, while one 2 steps away between lines, like (2, −1), is
-(2, 1, 1) away. Aggregate mode sees both at the same distance, but per-axis
-mode generally weighs them differently.
+So the position distributions say where on the board obstacles go, and these
+say how each sits relative to its nearest neighbour. For each axis, raising α
+favours more separation along it, raising β less, and Beta(1, 1) makes the
+axis neutral. With every axis tied, far-favouring shapes spread obstacles out
+much like aggregate mode does. Untied, they set which way neighbours line up:
+two neighbouring hexes share exactly one band. On the default board with 40
+obstacles, r Beta(5, 1) on its own cuts the neighbouring pairs that share an
+r band to about 9 per board, against about 15 sharing q or s (and 15 each
+with neutral shapes), while r Beta(1, 10) raises them to about 21. For
+example, q Beta(5, 1), r Beta(1, 5) and s Beta(1, 1) favour placing an
+obstacle in its nearest neighbour's r band but well apart in q: spaced rows.
+
+`is_obstacle_axes_symmetric` forces α = β for each axis, and
+`is_obstacle_axes_shared` (on by default) makes axes 2 and 3 use axis 1's α
+and β, the same way as the position distributions' controls. With no
+obstacles yet the term is left out: every axis weight is 1, and the heatmap
+shows each distance as 2R.
+
+Like aggregate mode, it can only spread obstacles while there's room. On the
+default board, far-favouring shapes leave every free hex next to an obstacle
+by about obstacle 26. From then on tied shapes can't tell the free hexes
+apart, as every neighbour is (1, 1, 0) away in some order, but untied ones
+still set which way neighbours line up.
+
+Tying the three axes isn't the same as aggregate mode. Seen from its nearest
+obstacle, a hex 2 steps away along a line, like (2, −2), is (2, 2, 0) away in
+q, r and s, sharing its s band, while one 2 steps away between lines, like
+(2, −1), is (2, 1, 1) away. Aggregate mode sees both at the same distance, but
+per-axis mode generally weighs them differently.
 
 It stops after placing `k_obstacles` obstacles or when no free hex has any
 weight. The heatmap's chances are exact, and it can also show each hex's

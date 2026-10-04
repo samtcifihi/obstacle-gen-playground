@@ -2,6 +2,7 @@ package algorithm
 
 import (
 	"fmt"
+	"math"
 	"math/rand/v2"
 	"slices"
 
@@ -14,7 +15,7 @@ var tripleBetaAlgorithm = Algorithm{
 	Description: "Weights every hex by three beta densities, one for each cube coordinate (q, r, s), each " +
 		"scaled so the coordinate's bands across the board evenly split 0 to 1, multiplied together, and by a " +
 		"distance weight: a fourth beta density over its distance to the nearest obstacle, or per axis, three more " +
-		"over how far its q, r and s are from the nearest obstacle's. Each obstacle goes on a free hex (no obstacle, " +
+		"over how far its q, r and s are from that obstacle's. Each obstacle goes on a free hex (no obstacle, " +
 		"and not making a bank too big) picked with probability proportional to its weight.",
 	Params: slices.Concat(
 		[]Param{
@@ -34,7 +35,7 @@ var tripleBetaAlgorithm = Algorithm{
 			{Name: "f_obstacles_distance_mode", Group: "Distance to obstacles", Type: Choice, Default: "aggregate",
 				Options: []Option{{Value: "aggregate", Label: "aggregate"}, {Value: "per_axis", Label: "per_axis"}},
 				Description: "aggregate weights a hex by its hex distance to the nearest obstacle; per_axis weights it by " +
-					"how far its q, r and s are from the nearest obstacle's q, r and s, each separately"},
+					"how far its q, r and s each are from that obstacle's"},
 			{Name: "is_obstacles_symmetric", Group: "Distance to obstacles", Type: Bool, Default: false, OnlyIf: aggregateMode,
 				Description: "Force α = β for the distance distribution"},
 			{Name: "k_alpha_obstacles", Group: "Distance to obstacles", Type: Float, Default: 1.0, MinExclusive: true,
@@ -91,12 +92,12 @@ func obstacleAxisParams(axis int, coord string) []Param {
 	return []Param{
 		{Name: alpha, Group: group, Type: Float, Default: 1.0, MinExclusive: true, OnlyIf: perAxisMode,
 			Follows: alphaFollows,
-			Description: fmt.Sprintf("α of the beta distribution over %s distance, how far a hex's %s is from the "+
-				"nearest obstacle's: raising it favours %s bands far from obstacles'", coord, coord, coord)},
+			Description: fmt.Sprintf("α of the beta distribution over %s distance, how far a hex's %s is from its "+
+				"nearest obstacle's: raising it favours more separation in %s", coord, coord, coord)},
 		{Name: beta, Group: group, Type: Float, Default: 1.0, MinExclusive: true, OnlyIf: perAxisMode,
 			Follows: betaFollows,
-			Description: fmt.Sprintf("β of the beta distribution over %s distance: raising it favours %s bands "+
-				"at or near obstacles'", coord, coord)},
+			Description: fmt.Sprintf("β of the beta distribution over %s distance: raising it favours less "+
+				"separation in %s", coord, coord)},
 	}
 }
 
@@ -298,20 +299,25 @@ func (t *hexDistance) weigh(h board.Hex) (float64, []float64) {
 	return t.weights[d], []float64{float64(d + 1), t.weights[d]}
 }
 
-// axisDistance is the per-axis distance term. A cell's q distance is how
-// far its q is from the nearest obstacle's q, min |q - q'| over obstacles,
-// so 0 if an obstacle shares its q band, however far away along it; the
-// same goes for r and s. On a board of radius R each runs from 0 to 2R,
-// and scales into (0, 1) as the middle of its band, (d + ½)/(2R + 1). The
-// distance weight is the product of the three axes' densities there.
+// axisDistance is the per-axis distance term. It measures a cell against
+// its nearest obstacle by hex distance, and splits the displacement
+// between them into its three cube coordinates: the q distance is
+// |q - q'|, so 0 if the obstacle shares the cell's q band, and the same
+// goes for r and s. On a board of radius R each runs from 0 to 2R, and
+// scales into (0, 1) as the middle of its band, (d + ½)/(2R + 1). The
+// obstacle's weight is the product of the three axes' densities there.
+//
+// When several obstacles are equally near, the distance weight is the mean
+// of theirs, summed in a fixed order so it doesn't depend on the order of
+// the obstacles, even in rounding. The values recorded are also means
+// over them.
 //
 // With no obstacles, the term has no effect: every weight is 1.
 type axisDistance struct {
-	radius  int
-	weights [3][]float64 // by axis, then distance
-	// nearest holds, by axis and then coordinate + radius, the distance from
-	// that coordinate to the nearest obstacle's; nil with no obstacles.
-	nearest [3][]int
+	radius    int
+	weights   [3][]float64 // by axis, then distance
+	obstacles []board.Hex
+	nearest   [][3]int // scratch space for weigh
 }
 
 func newAxisDistance(b *board.Board, shapes [3]BetaShape) *axisDistance {
@@ -326,13 +332,14 @@ func newAxisDistance(b *board.Board, shapes [3]BetaShape) *axisDistance {
 }
 
 var axisDistanceMetrics = []Metric{
-	{Name: "distance_weight", Description: "Distance weight (product of the three axes' distance densities)"},
-	{Name: "q_distance", Description: "q distance: how far its q is from the nearest obstacle's (0 if shared)", Integer: true},
-	{Name: "q_distance_weight", Description: "q distance weight (density at the scaled q distance)"},
-	{Name: "r_distance", Description: "r distance: how far its r is from the nearest obstacle's (0 if shared)", Integer: true},
-	{Name: "r_distance_weight", Description: "r distance weight (density at the scaled r distance)"},
-	{Name: "s_distance", Description: "s distance: how far its s is from the nearest obstacle's (0 if shared)", Integer: true},
-	{Name: "s_distance_weight", Description: "s distance weight (density at the scaled s distance)"},
+	{Name: "distance_weight", Description: "Distance weight (product of the three axes' densities, for the " +
+		"nearest obstacle, or the mean over those equally near)"},
+	{Name: "q_distance", Description: "q distance: how far its q is from its nearest obstacle's (the mean, if several are as near)"},
+	{Name: "q_distance_weight", Description: "q distance weight (density at the scaled q distance, or the mean)"},
+	{Name: "r_distance", Description: "r distance: how far its r is from its nearest obstacle's (the mean, if several are as near)"},
+	{Name: "r_distance_weight", Description: "r distance weight (density at the scaled r distance, or the mean)"},
+	{Name: "s_distance", Description: "s distance: how far its s is from its nearest obstacle's (the mean, if several are as near)"},
+	{Name: "s_distance_weight", Description: "s distance weight (density at the scaled s distance, or the mean)"},
 }
 
 func (t *axisDistance) metrics() []Metric { return axisDistanceMetrics }
@@ -346,45 +353,53 @@ func (t *axisDistance) finite() bool {
 	return true
 }
 
-func (t *axisDistance) round(obstacles []board.Hex) {
-	if len(obstacles) == 0 {
-		t.nearest = [3][]int{}
-		return
-	}
-	for axis := range t.nearest {
-		taken := make([]bool, 2*t.radius+1) // by coordinate + radius
-		for _, o := range obstacles {
-			taken[cube(o)[axis]+t.radius] = true
-		}
-		nearest := make([]int, len(taken))
-		for x := range nearest {
-			nearest[x] = len(taken)
-			for y, ok := range taken {
-				if ok {
-					nearest[x] = min(nearest[x], abs(x-y))
-				}
-			}
-		}
-		t.nearest[axis] = nearest
-	}
-}
+func (t *axisDistance) round(obstacles []board.Hex) { t.obstacles = obstacles }
 
 func (t *axisDistance) weigh(h board.Hex) (float64, []float64) {
-	weight := 1.0
-	values := make([]float64, 1, 7)
-	for axis, x := range cube(h) {
-		// With no obstacles, every coordinate is as far as can be, but the
-		// term is left out, as the same factor on every cell would change
-		// nothing, unless it rounded down to 0.
-		d, w := 2*t.radius, 1.0
-		if t.nearest[axis] != nil {
-			d = t.nearest[axis][x+t.radius]
-			w = t.weights[axis][d]
+	values := make([]float64, 7)
+	if len(t.obstacles) == 0 {
+		// Every coordinate is as far as can be, but the term is left out,
+		// as the same factor on every cell would change nothing, unless it
+		// rounded down to 0.
+		values[0] = 1
+		for axis := range 3 {
+			values[1+2*axis], values[2+2*axis] = float64(2*t.radius), 1
 		}
-		weight *= w
-		values = append(values, float64(d), w)
+		return 1, values
 	}
+
+	// The q, r and s distances to each of the nearest obstacles.
+	t.nearest = t.nearest[:0]
+	nearest := math.MaxInt
+	for _, o := range t.obstacles {
+		d := h.DistanceTo(o)
+		if d > nearest {
+			continue
+		}
+		if d < nearest {
+			nearest, t.nearest = d, t.nearest[:0]
+		}
+		c, co := cube(h), cube(o)
+		t.nearest = append(t.nearest, [3]int{abs(c[0] - co[0]), abs(c[1] - co[1]), abs(c[2] - co[2])})
+	}
+	slices.SortFunc(t.nearest, func(a, b [3]int) int { return slices.Compare(a[:], b[:]) })
+
+	weight := 0.0
+	for _, ds := range t.nearest {
+		w := 1.0
+		for axis, d := range ds {
+			w *= t.weights[axis][d]
+			values[1+2*axis] += float64(d)
+			values[2+2*axis] += t.weights[axis][d]
+		}
+		weight += w
+	}
+	n := float64(len(t.nearest))
+	weight /= n
 	values[0] = weight
+	for i := 1; i < len(values); i++ {
+		values[i] /= n
+	}
 	return weight, values
 }
 
