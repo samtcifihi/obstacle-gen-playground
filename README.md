@@ -26,7 +26,7 @@ value to its highest. Changing a parameter keeps you on the same step.
 Places `n` obstacles, each on an empty hex chosen with equal probability. If
 `n` is at least the number of empty hexes, the board ends up full.
 
-### Scored
+### Evolved
 
 Places obstacles one at a time. Each round:
 

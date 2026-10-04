@@ -159,7 +159,7 @@ function showFrame() {
   for (const [key, polygon] of view.hexes) {
     const values = candidates.get(key);
     const isObstacle = obstacles.has(key);
-    const isBlocked = step && !isObstacle && !values;
+    const isBlocked = Boolean(step) && !isObstacle && !values;
     blocked ||= isBlocked;
     polygon.classList.toggle("obstacle", isObstacle);
     polygon.classList.toggle("blocked", isBlocked);

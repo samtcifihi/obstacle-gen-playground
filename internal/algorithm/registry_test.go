@@ -63,7 +63,7 @@ func TestRunWithDefaults(t *testing.T) {
 }
 
 func TestParse(t *testing.T) {
-	v, err := scoredAlgorithm.Parse(url.Values{
+	v, err := evolvedAlgorithm.Parse(url.Values{
 		"k_obstacles":            {"3"},
 		"k_beta":                 {"0.5"},
 		"is_weighted":            {"false"},
@@ -98,7 +98,7 @@ func TestParseRejectsInvalid(t *testing.T) {
 		{"is_weighted": {"maybe"}},
 		{"f_obstacles_b": {"median"}},
 	} {
-		if _, err := scoredAlgorithm.Parse(q); err == nil {
+		if _, err := evolvedAlgorithm.Parse(q); err == nil {
 			t.Errorf("Parse(%v) succeeded, want an error", q)
 		}
 	}

@@ -8,9 +8,9 @@ import (
 	"github.com/samtcifihi/obstacle-gen-playground/internal/board"
 )
 
-var scoredAlgorithm = Algorithm{
-	ID:   "scored",
-	Name: "Scored",
+var evolvedAlgorithm = Algorithm{
+	ID:   "evolved",
+	Name: "Evolved",
 	Description: "Places obstacles one at a time. Each round, every empty cell is scored by how far it can see " +
 		"before an obstacle, how far it is from the edge, and some noise, then the next obstacle goes on a cell " +
 		"chosen by score. Distances are divided by visibility: the number of cells between the centre cell " +
@@ -38,7 +38,7 @@ var scoredAlgorithm = Algorithm{
 		},
 	),
 	run: func(b *board.Board, v Values, rng *rand.Rand) Trace {
-		return Scored(b, scoredConfig(v), rng)
+		return Evolved(b, evolvedConfig(v), rng)
 	},
 }
 
@@ -70,8 +70,8 @@ func conjugateFrom(v Values, term string) Conjugate {
 	}
 }
 
-func scoredConfig(v Values) ScoredConfig {
-	return ScoredConfig{
+func evolvedConfig(v Values) EvolvedConfig {
+	return EvolvedConfig{
 		Obstacles:    v.Int("k_obstacles"),
 		MaxBank:      v.Int("k_max_bank"),
 		ObstacleTerm: conjugateFrom(v, "obstacles"),
@@ -122,8 +122,8 @@ var aggregateFuncs = map[string]func([]float64) float64{
 	"min": slices.Min[[]float64],
 }
 
-// ScoredConfig holds the parameters of Scored.
-type ScoredConfig struct {
+// EvolvedConfig holds the parameters of Evolved.
+type EvolvedConfig struct {
 	Obstacles    int       // k_obstacles
 	MaxBank      int       // k_max_bank; 0 means no limit
 	ObstacleTerm Conjugate // is_obstacles_flattened, f_obstacles_*
@@ -168,7 +168,7 @@ func (c Conjugate) Apply(s [3][2]float64) float64 {
 	return c.AInv(c.Dir(perAxis))
 }
 
-// Scored places obstacles on b one at a time. Each round it scores the
+// Evolved places obstacles on b one at a time. Each round it scores the
 // cells, then places an obstacle on one chosen by score:
 //
 //  1. Empty cells start with a score of 0. Obstacles have no score, so are
@@ -188,12 +188,12 @@ func (c Conjugate) Apply(s [3][2]float64) float64 {
 //
 // It stops once it has placed cfg.Obstacles obstacles or no cell has a
 // score. The trace has a step for each obstacle placed, recording every
-// scored cell's values for scoredMetrics.
-func Scored(b *board.Board, cfg ScoredConfig, rng *rand.Rand) Trace {
+// scored cell's values for evolvedMetrics.
+func Evolved(b *board.Board, cfg EvolvedConfig, rng *rand.Rand) Trace {
 	g := grid{b: b, index: b.Index()}
 	// A one-cell board has visibility 0, but then every distance is 0 too.
 	visibility := max(b.Visibility(), 1)
-	trace := Trace{Metrics: scoredMetrics}
+	trace := Trace{Metrics: evolvedMetrics}
 	for len(trace.Steps) < cfg.Obstacles {
 		banks := g.banks()
 		var cells []scoredCell
@@ -243,8 +243,8 @@ func Scored(b *board.Board, cfg ScoredConfig, rng *rand.Rand) Trace {
 	return trace
 }
 
-// scoredMetrics are the values Scored records for each scored cell.
-var scoredMetrics = []Metric{
+// evolvedMetrics are the values Evolved records for each scored cell.
+var evolvedMetrics = []Metric{
 	{Name: "score", Description: "Score (steps 1–5)"},
 	chanceMetric,
 	{Name: "weight", Description: "Score after stretching or shifting (step 6)"},

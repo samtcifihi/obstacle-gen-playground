@@ -9,15 +9,15 @@ import (
 	"github.com/samtcifihi/obstacle-gen-playground/internal/board"
 )
 
-// defaultScoredConfig returns the config Scored runs with when no
+// defaultEvolvedConfig returns the config Evolved runs with when no
 // parameters are given.
-func defaultScoredConfig(t *testing.T) ScoredConfig {
+func defaultEvolvedConfig(t *testing.T) EvolvedConfig {
 	t.Helper()
-	v, err := scoredAlgorithm.Parse(url.Values{})
+	v, err := evolvedAlgorithm.Parse(url.Values{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	return scoredConfig(v)
+	return evolvedConfig(v)
 }
 
 func conjugate(flattened bool, a, b, dir, aInv string) Conjugate {
@@ -176,30 +176,30 @@ func TestBestChoice(t *testing.T) {
 	}
 }
 
-func TestScoredPlacesObstacles(t *testing.T) {
+func TestEvolvedPlacesObstacles(t *testing.T) {
 	for _, n := range []int{0, 1, 16, 61, 100} {
-		cfg := defaultScoredConfig(t)
+		cfg := defaultEvolvedConfig(t)
 		cfg.Obstacles = n
 		b := board.NewHexagon(5)
 		want := min(n, len(b.Cells))
-		if got := len(Scored(b, cfg, newRNG(1)).Steps); got != want {
-			t.Errorf("Scored(k_obstacles=%d) returned %d, want %d", n, got, want)
+		if got := len(Evolved(b, cfg, newRNG(1)).Steps); got != want {
+			t.Errorf("Evolved(k_obstacles=%d) returned %d, want %d", n, got, want)
 		}
 		if got := countObstacles(b); got != want {
-			t.Errorf("Scored(k_obstacles=%d) left %d obstacles, want %d", n, got, want)
+			t.Errorf("Evolved(k_obstacles=%d) left %d obstacles, want %d", n, got, want)
 		}
 	}
 }
 
-func TestScoredMaxBank(t *testing.T) {
+func TestEvolvedMaxBank(t *testing.T) {
 	for _, maxBank := range []int{1, 2, 3} {
 		for _, weighted := range []bool{true, false} {
-			cfg := defaultScoredConfig(t)
+			cfg := defaultEvolvedConfig(t)
 			cfg.Obstacles = 1000
 			cfg.MaxBank = maxBank
 			cfg.Weighted = weighted
 			b := board.NewHexagon(5)
-			placed := len(Scored(b, cfg, newRNG(uint64(maxBank))).Steps)
+			placed := len(Evolved(b, cfg, newRNG(uint64(maxBank))).Steps)
 			g := grid{b: b, index: b.Index()}
 			bs := g.banks()
 			for bank, size := range bs.sizes {
@@ -220,25 +220,25 @@ func TestScoredMaxBank(t *testing.T) {
 	}
 }
 
-func TestScoredFirstPickWithoutNoise(t *testing.T) {
+func TestEvolvedFirstPickWithoutNoise(t *testing.T) {
 	// With no noise, on an empty board every cell sees as far as it can
 	// in every direction, so the edge term decides: the centre wins.
-	cfg := defaultScoredConfig(t)
+	cfg := defaultEvolvedConfig(t)
 	cfg.Obstacles = 1
 	cfg.BetaCoef = 0
 	cfg.Weighted = false
 	b := board.NewHexagon(5)
-	Scored(b, cfg, newRNG(1))
+	Evolved(b, cfg, newRNG(1))
 	if !b.Cells[b.Index()[board.Hex{}]].Obstacle {
 		t.Errorf("first obstacle wasn't placed on the centre")
 	}
 }
 
-func TestScoredIsReproducible(t *testing.T) {
-	cfg := defaultScoredConfig(t)
+func TestEvolvedIsReproducible(t *testing.T) {
+	cfg := defaultEvolvedConfig(t)
 	a, b := board.NewHexagon(5), board.NewHexagon(5)
-	Scored(a, cfg, newRNG(42))
-	Scored(b, cfg, newRNG(42))
+	Evolved(a, cfg, newRNG(42))
+	Evolved(b, cfg, newRNG(42))
 	for i := range a.Cells {
 		if a.Cells[i] != b.Cells[i] {
 			t.Fatalf("same seed gave different boards at cell %d: %v vs %v", i, a.Cells[i], b.Cells[i])
@@ -265,12 +265,12 @@ func TestChances(t *testing.T) {
 	}
 }
 
-func TestScoredCentreTermsOnEmptyBoard(t *testing.T) {
+func TestEvolvedCentreTermsOnEmptyBoard(t *testing.T) {
 	// The centre is visibility cells from the edge and sees no obstacles,
 	// so both distance terms are 1 for any conjugate that averages.
-	cfg := defaultScoredConfig(t)
+	cfg := defaultEvolvedConfig(t)
 	cfg.Obstacles = 1
-	trace := Scored(board.NewHexagon(5), cfg, newRNG(1))
+	trace := Evolved(board.NewHexagon(5), cfg, newRNG(1))
 	for _, c := range trace.Steps[0].Candidates {
 		if c.Hex != (board.Hex{}) {
 			continue
@@ -335,10 +335,10 @@ func TestTraces(t *testing.T) {
 	checkTrace(t, "uniform", b, Uniform(b, 20, newRNG(1)))
 
 	for _, weighted := range []bool{true, false} {
-		cfg := defaultScoredConfig(t)
+		cfg := defaultEvolvedConfig(t)
 		cfg.Weighted = weighted
 		cfg.MaxBank = 2
 		b := board.NewHexagon(5)
-		checkTrace(t, fmt.Sprintf("scored, weighted=%v", weighted), b, Scored(b, cfg, newRNG(1)))
+		checkTrace(t, fmt.Sprintf("evolved, weighted=%v", weighted), b, Evolved(b, cfg, newRNG(1)))
 	}
 }

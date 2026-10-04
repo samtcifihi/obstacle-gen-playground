@@ -59,8 +59,8 @@ func TestGenerate(t *testing.T) {
 	}
 }
 
-func TestGenerateScored(t *testing.T) {
-	resp := generate(t, "algorithm=scored&k_obstacles=12&k_max_bank=1&f_obstacles_a%27=identity&is_weighted=false")
+func TestGenerateEvolved(t *testing.T) {
+	resp := generate(t, "algorithm=evolved&k_obstacles=12&k_max_bank=1&f_obstacles_a%27=identity&is_weighted=false")
 	if resp.Placed != 12 {
 		t.Errorf("placed = %d, want 12", resp.Placed)
 	}
@@ -72,7 +72,7 @@ func TestGenerateScored(t *testing.T) {
 	}
 
 	// With no parameters, it uses the defaults.
-	if resp := generate(t, "algorithm=scored"); resp.Placed != 16 {
+	if resp := generate(t, "algorithm=evolved"); resp.Placed != 16 {
 		t.Errorf("placed = %d with default parameters, want 16", resp.Placed)
 	}
 }
@@ -85,7 +85,7 @@ func TestGenerateFillsBoard(t *testing.T) {
 }
 
 func TestGenerateSeedIsReproducible(t *testing.T) {
-	for _, query := range []string{"algorithm=uniform&n=5", "algorithm=scored"} {
+	for _, query := range []string{"algorithm=uniform&n=5", "algorithm=evolved"} {
 		first := generate(t, query)
 		again := generate(t, query+"&seed="+strconv.FormatUint(first.Seed, 10))
 		if !reflect.DeepEqual(first, again) {
@@ -105,8 +105,8 @@ func TestGenerateRejectsBadParams(t *testing.T) {
 		"algorithm=uniform&n=1.5",
 		"algorithm=uniform&n=3&seed=-1",
 		"algorithm=uniform&n=3&seed=x",
-		"algorithm=scored&k_beta=0",
-		"algorithm=scored&f_edge_b=median",
+		"algorithm=evolved&k_beta=0",
+		"algorithm=evolved&f_edge_b=median",
 	} {
 		if rec := get(t, "/api/generate?"+query); rec.Code != http.StatusBadRequest {
 			t.Errorf("GET /api/generate?%s: status %d, want %d", query, rec.Code, http.StatusBadRequest)
@@ -126,11 +126,11 @@ func TestAlgorithms(t *testing.T) {
 	if err := json.NewDecoder(rec.Body).Decode(&algs); err != nil {
 		t.Fatalf("decoding response: %v", err)
 	}
-	if len(algs) != 2 || algs[0].ID != "uniform" || algs[1].ID != "scored" {
-		t.Fatalf("algorithms = %+v, want uniform then scored", algs)
+	if len(algs) != 2 || algs[0].ID != "uniform" || algs[1].ID != "evolved" {
+		t.Fatalf("algorithms = %+v, want uniform then evolved", algs)
 	}
 	if n := len(algs[1].Params); n != 17 {
-		t.Errorf("scored has %d parameters, want 17", n)
+		t.Errorf("evolved has %d parameters, want 17", n)
 	}
 }
 

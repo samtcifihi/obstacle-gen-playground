@@ -12,7 +12,7 @@ import (
 )
 
 // All lists the available algorithms, in the order a UI should offer them.
-var All = []Algorithm{uniformAlgorithm, scoredAlgorithm}
+var All = []Algorithm{uniformAlgorithm, evolvedAlgorithm}
 
 // Lookup returns the algorithm with the given ID.
 func Lookup(id string) (Algorithm, bool) {
