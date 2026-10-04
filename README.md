@@ -382,4 +382,4 @@ The seed is a string because it can exceed JavaScript's safe integer range.
 
 ## License
 
-[MIT](LICENSE).
+Public domain, under [the Unlicense](LICENSE).
