@@ -11,73 +11,86 @@ func shapes(alpha, beta float64) [3]BetaShape {
 	return [3]BetaShape{{alpha, beta}, {alpha, beta}, {alpha, beta}}
 }
 
-func TestFitHexIsExactForConsistentPositions(t *testing.T) {
-	// A hex's position along each axis is its projection onto that axis,
-	// in cells: with s = -q - r, (q - s)/2, (r - s)/2 and (q - r)/2.
-	for _, c := range board.NewHexagon(5).Cells {
-		q, r := float64(c.Q), float64(c.R)
-		s := -q - r
-		if got := fitHex([3]float64{(q - s) / 2, (r - s) / 2, (q - r) / 2}); got != c.Hex {
-			t.Errorf("positions of %v fit %v", c.Hex, got)
-		}
-	}
-	// The corners are visibility cells along each axis.
-	for i, dir := range axes {
-		var pos [3]float64
-		pos[i] = 4
-		if got := fitHex(pos); got == (board.Hex{Q: 4 * dir.Q, R: 4 * dir.R}) {
-			t.Errorf("a position of 4 along axis %d alone reached the corner; the other axes should pull it in", i+1)
-		}
-	}
+func ring(h board.Hex) int {
+	return max(abs(h.Q), abs(h.R), abs(h.Q+h.R))
 }
 
-func TestLandingChancesMatchSampling(t *testing.T) {
-	const samples = 300_000
-	b := board.NewHexagon(5)
-	index := b.Index()
-	halfLength := float64(b.Visibility()) + 0.5
-	for _, s := range [][3]BetaShape{
-		shapes(1, 1),
-		shapes(2, 2),
-		shapes(0.5, 0.5),
-		{{3, 1}, {1, 1}, {0.7, 2}},
-	} {
-		want := landingChances(b, s, halfLength)
-		got := make([]float64, len(b.Cells))
-		rng := newRNG(9)
-		for range samples {
-			if i, ok := index[sampleHex(rng, s, halfLength)]; ok {
-				got[i]++
-			}
-		}
-		for i := range got {
-			got[i] /= samples
-			// Allow for sampling noise (about 4 standard errors) plus a
-			// little for the estimate's own error.
-			tolerance := 4*math.Sqrt(want[i]*(1-want[i])/samples) + 0.001
-			if math.Abs(got[i]-want[i]) > tolerance {
-				t.Errorf("shapes %v: cell %v estimated %.4f, sampled %.4f", s, b.Cells[i].Hex, want[i], got[i])
+func TestHexWeightsUniform(t *testing.T) {
+	// Beta(1, 1) is flat, so every hex gets the same weight either way.
+	for _, inset := range []bool{false, true} {
+		for i, w := range hexWeights(board.NewHexagon(5), shapes(1, 1), inset) {
+			if w != 1 {
+				t.Errorf("inset=%v: cell %d has weight %v, want 1", inset, i, w)
 			}
 		}
 	}
 }
 
-func TestLandingChancesAreSymmetric(t *testing.T) {
-	// With the same symmetric distribution on every axis, rotating the board
-	// by 60° shouldn't change anything.
+func TestHexWeightsPerimeter(t *testing.T) {
+	// Beta(2, 2) is 0 at 0 and 1, so perimeter hexes get no weight unless
+	// the coordinates are inset.
+	b := board.NewHexagon(5)
+	for _, inset := range []bool{false, true} {
+		weights := hexWeights(b, shapes(2, 2), inset)
+		for i, c := range b.Cells {
+			if perimeter := ring(c.Hex) == 4; (weights[i] == 0) != (perimeter && !inset) {
+				t.Errorf("inset=%v: %v has weight %v", inset, c.Hex, weights[i])
+			}
+		}
+	}
+	// The centre is at 0.5 on every axis, where Beta(2, 2) is 1.5.
+	if w := hexWeights(b, shapes(2, 2), false)[b.Index()[board.Hex{}]]; math.Abs(w-1.5*1.5*1.5) > 1e-12 {
+		t.Errorf("centre has weight %v, want 1.5³", w)
+	}
+}
+
+func TestHexWeightsSymmetric(t *testing.T) {
+	// The same symmetric shape on every axis has sixfold symmetry.
 	b := board.NewHexagon(5)
 	index := b.Index()
-	chances := landingChances(b, shapes(1.5, 1.5), float64(b.Visibility())+0.5)
-	total := 0.0
+	for _, inset := range []bool{false, true} {
+		weights := hexWeights(b, shapes(2.5, 2.5), inset)
+		for i, c := range b.Cells {
+			rotated := board.Hex{Q: -c.R, R: c.Q + c.R}
+			if got := weights[index[rotated]]; math.Abs(got-weights[i]) > 1e-12*weights[i] {
+				t.Errorf("inset=%v: %v has weight %v, but rotated 60° to %v has %v", inset, c.Hex, weights[i], rotated, got)
+			}
+		}
+	}
+}
+
+func TestHexWeightsAsymmetric(t *testing.T) {
+	// Beta(2, 5) on q favours low q: the lower left edge.
+	b := board.NewHexagon(5)
+	weights := hexWeights(b, [3]BetaShape{{2, 5}, {1, 1}, {1, 1}}, false)
+	sum, total := 0.0, 0.0
 	for i, c := range b.Cells {
-		total += chances[i]
-		rotated := board.Hex{Q: -c.R, R: c.Q + c.R}
-		if got := chances[index[rotated]]; math.Abs(got-chances[i]) > 1e-3 {
-			t.Errorf("cell %v has chance %.4f, but %v rotated 60° has %.4f", c.Hex, chances[i], rotated, got)
-		}
+		sum += weights[i] * float64(c.Q)
+		total += weights[i]
 	}
-	if total > 1+1e-9 {
-		t.Errorf("chances add up to %v, more than 1", total)
+	if mean := sum / total; mean > -1 {
+		t.Errorf("weighted mean q is %v, want well below 0", mean)
+	}
+}
+
+func TestWeightedIndexMatchesWeights(t *testing.T) {
+	const samples = 200_000
+	b := board.NewHexagon(5)
+	weights := hexWeights(b, [3]BetaShape{{2, 5}, {3, 3}, {0.7, 1.2}}, true)
+	total := 0.0
+	for _, w := range weights {
+		total += w
+	}
+	counts := make([]float64, len(weights))
+	rng := newRNG(9)
+	for range samples {
+		counts[weightedIndex(rng, weights, total)]++
+	}
+	for i, w := range weights {
+		p := w / total
+		if got := counts[i] / samples; math.Abs(got-p) > 4*math.Sqrt(p*(1-p)/samples)+1e-4 {
+			t.Errorf("cell %v picked %.4f of the time, want %.4f", b.Cells[i].Hex, got, p)
+		}
 	}
 }
 
@@ -104,11 +117,27 @@ func TestTripleBetaPlacesObstacles(t *testing.T) {
 	}
 }
 
+func TestTripleBetaChancesAreExact(t *testing.T) {
+	// With flat distributions, every free cell has the same chance, and
+	// every cell the same chance per try.
+	b := board.NewHexagon(5)
+	cfg := defaultTripleBetaConfig(t, b)
+	cfg.Obstacles = 5
+	trace := TripleBeta(b, cfg, newRNG(1))
+	for i, step := range trace.Steps {
+		for _, c := range step.Candidates {
+			if chance, landing := c.Values[0], c.Values[1]; math.Abs(chance-1/float64(61-i)) > 1e-12 || math.Abs(landing-1.0/61) > 1e-12 {
+				t.Fatalf("step %d: %v has chance %v and landing %v, want 1/%d and 1/61", i, c.Hex, chance, landing, 61-i)
+			}
+		}
+	}
+}
+
 func TestTripleBetaGivesUp(t *testing.T) {
 	b := board.NewHexagon(5)
 	cfg := defaultTripleBetaConfig(t, b)
 	cfg.Obstacles = 61
-	cfg.MaxTries = 30
+	cfg.MaxTries = 50
 	trace := TripleBeta(b, cfg, newRNG(1))
 	tries := 0
 	for _, s := range trace.Steps {
@@ -120,10 +149,46 @@ func TestTripleBetaGivesUp(t *testing.T) {
 	if tries > cfg.MaxTries {
 		t.Errorf("steps took %d tries in all, more than k_max_tries=%d", tries, cfg.MaxTries)
 	}
-	if len(trace.Steps) >= 30 || trace.Note != "gave up after 30 tries" {
-		t.Errorf("placed %d obstacles with note %q, want fewer than 30 and to give up", len(trace.Steps), trace.Note)
+	if len(trace.Steps) >= 50 || trace.Note != "gave up after 50 tries" {
+		t.Errorf("placed %d obstacles with note %q, want fewer than 50 and to give up", len(trace.Steps), trace.Note)
 	}
 	checkTrace(t, "triple beta", b, trace)
+}
+
+func TestTripleBetaZeroWeightCells(t *testing.T) {
+	// With Beta(2, 2) the perimeter has no weight, so only the 37 inner
+	// cells can be filled, and they're offered as the only candidates.
+	b := board.NewHexagon(5)
+	cfg := defaultTripleBetaConfig(t, b)
+	cfg.Axes = shapes(2, 2)
+	cfg.Obstacles = 61
+	cfg.MaxTries = 1_000_000
+	trace := TripleBeta(b, cfg, newRNG(1))
+	if len(trace.Steps) != 37 || trace.Note != "no free cell has any weight" {
+		t.Errorf("placed %d obstacles with note %q, want 37 and no weight left", len(trace.Steps), trace.Note)
+	}
+	for _, step := range trace.Steps {
+		for _, c := range step.Candidates {
+			if ring(c.Hex) == 4 {
+				t.Fatalf("perimeter hex %v offered as a candidate", c.Hex)
+			}
+		}
+	}
+	checkTrace(t, "triple beta", b, trace)
+}
+
+func TestTripleBetaInfiniteWeights(t *testing.T) {
+	// α < 1 makes the density infinite at 0, so it needs is_inset.
+	for _, inset := range []bool{false, true} {
+		b := board.NewHexagon(5)
+		cfg := defaultTripleBetaConfig(t, b)
+		cfg.Axes = shapes(0.5, 0.5)
+		cfg.Inset = inset
+		trace := TripleBeta(b, cfg, newRNG(1))
+		if placed := len(trace.Steps); inset != (placed == cfg.Obstacles) || inset == (trace.Note != "") {
+			t.Errorf("inset=%v: placed %d with note %q", inset, placed, trace.Note)
+		}
+	}
 }
 
 func TestTripleBetaMaxBank(t *testing.T) {
@@ -131,56 +196,29 @@ func TestTripleBetaMaxBank(t *testing.T) {
 	cfg := defaultTripleBetaConfig(t, b)
 	cfg.Obstacles = 61
 	cfg.MaxBank = 1
-	cfg.MaxTries = 100_000
+	cfg.MaxTries = 1_000_000
 	trace := TripleBeta(b, cfg, newRNG(2))
 	g := grid{b: b, index: b.Index()}
-	bs := g.banks()
-	for bank, size := range bs.sizes {
+	for bank, size := range g.banks().sizes {
 		if size > 1 {
 			t.Errorf("bank %d has %d obstacles", bank, size)
 		}
 	}
-	if trace.Note != "no free cell could take an obstacle" {
-		t.Errorf("stopped with note %q, want no free cell", trace.Note)
+	if trace.Note != "no free cell has any weight" {
+		t.Errorf("stopped with note %q, want no free cell left", trace.Note)
 	}
 	checkTrace(t, "triple beta", b, trace)
-}
-
-func TestTripleBetaFollowsDistribution(t *testing.T) {
-	// Skewing every axis towards its "to" corner moves obstacles that way:
-	// right (axis 1), down right (axis 2) and up right (axis 3), so towards
-	// higher q overall.
-	b := board.NewHexagon(5)
-	cfg := defaultTripleBetaConfig(t, b)
-	cfg.Axes = shapes(6, 1.5)
-	cfg.Obstacles = 10
-	TripleBeta(b, cfg, newRNG(3))
-	sum := 0
-	for _, c := range b.Cells {
-		if c.Obstacle {
-			sum += c.Q
-		}
-	}
-	if sum <= 10 {
-		t.Errorf("obstacles' q adds up to %d, want them well to the right", sum)
-	}
 }
 
 func TestTripleBetaIsReproducible(t *testing.T) {
 	a, b := board.NewHexagon(5), board.NewHexagon(5)
 	cfg := defaultTripleBetaConfig(t, a)
+	cfg.Axes = [3]BetaShape{{2, 5}, {3, 3}, {1, 2}}
 	TripleBeta(a, cfg, newRNG(42))
 	TripleBeta(b, cfg, newRNG(42))
 	for i := range a.Cells {
 		if a.Cells[i] != b.Cells[i] {
 			t.Fatalf("same seed gave different boards at cell %d", i)
 		}
-	}
-}
-
-func BenchmarkLandingChances(bm *testing.B) {
-	b := board.NewHexagon(5)
-	for range bm.N {
-		landingChances(b, shapes(2, 2), 4.5)
 	}
 }

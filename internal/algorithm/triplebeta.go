@@ -11,9 +11,9 @@ import (
 var tripleBetaAlgorithm = Algorithm{
 	ID:   "triple_beta",
 	Name: "Triple Beta",
-	Description: "Places each obstacle by sampling three beta distributions, one along each axis through the " +
-		"centre, each running from corner to corner. The obstacle goes on the hex whose position along each axis " +
-		"best matches the samples. If that hex is off the board, already has an obstacle, or would make a bank " +
+	Description: "Weights every hex by three beta densities, one for each cube coordinate (q, r, s), each " +
+		"scaled so the coordinate's range on the board runs from 0 to 1, multiplied together. Each try picks a " +
+		"hex with probability proportional to its weight. If it already has an obstacle or would make a bank " +
 		"too big, it tries again, up to k_max_tries tries in all.",
 	Params: slices.Concat(
 		[]Param{
@@ -28,21 +28,26 @@ var tripleBetaAlgorithm = Algorithm{
 				Description: "Force α = β for each distribution, so each is symmetric about the centre"},
 			{Name: "is_axes_shared", Group: "Distributions", Type: Bool, Default: true,
 				Description: "Force all 3 distributions to use axis 1's α and β"},
+			{Name: "is_inset", Group: "Distributions", Type: Bool, Default: false,
+				Description: "Scale each coordinate to the middle of its band, (x + R + ½)/(2R + 1), instead of " +
+					"(x/R + 1)/2, so the board's edges aren't at exactly 0 and 1. Keeps edge hexes possible when " +
+					"α or β > 1, and is needed when α or β < 1, whose density is infinite at 0 or 1"},
 		},
-		axisParams(1, "left corner", "right corner"),
-		axisParams(2, "top left corner", "bottom right corner"),
-		axisParams(3, "bottom left corner", "top right corner"),
+		axisParams(1, "q", "lower left edge", "upper right edge"),
+		axisParams(2, "r", "top edge", "bottom edge"),
+		axisParams(3, "s", "lower right edge", "upper left edge"),
 	),
 	run: func(b *board.Board, v Values, rng *rand.Rand) Trace {
 		return TripleBeta(b, tripleBetaConfig(v), rng)
 	},
 }
 
-// axisParams returns the α and β parameters of the distribution along
-// axis, which runs from corner from to corner to.
-func axisParams(axis int, from, to string) []Param {
+// axisParams returns the α and β parameters of the distribution over cube
+// coordinate coord, whose lowest value is along edge from and highest
+// along edge to.
+func axisParams(axis int, coord, from, to string) []Param {
 	alpha, beta := fmt.Sprintf("k_alpha_%d", axis), fmt.Sprintf("k_beta_%d", axis)
-	group := fmt.Sprintf("Axis %d: %s to %s", axis, from, to)
+	group := fmt.Sprintf("Axis %d (%s): %s to %s", axis, coord, from, to)
 	var alphaFollows, betaFollows []Follow
 	if axis > 1 {
 		alphaFollows = []Follow{{When: "is_axes_shared", Param: "k_alpha_1"}}
@@ -51,9 +56,9 @@ func axisParams(axis int, from, to string) []Param {
 	betaFollows = append(betaFollows, Follow{When: "is_symmetric", Param: alpha})
 	return []Param{
 		{Name: alpha, Group: group, Type: Float, Default: 1.0, MinExclusive: true, Follows: alphaFollows,
-			Description: "α of the beta distribution: raising it moves samples towards the " + to},
+			Description: fmt.Sprintf("α of the beta distribution over %s: raising it favours the %s", coord, to)},
 		{Name: beta, Group: group, Type: Float, Default: 1.0, MinExclusive: true, Follows: betaFollows,
-			Description: "β of the beta distribution: raising it moves samples towards the " + from},
+			Description: fmt.Sprintf("β of the beta distribution over %s: raising it favours the %s", coord, from)},
 	}
 }
 
@@ -62,6 +67,7 @@ func tripleBetaConfig(v Values) TripleBetaConfig {
 		Obstacles: v.Int("k_obstacles"),
 		MaxBank:   v.Int("k_max_bank"),
 		MaxTries:  v.Int("k_max_tries"),
+		Inset:     v.Bool("is_inset"),
 	}
 	for i := range cfg.Axes {
 		cfg.Axes[i] = BetaShape{
@@ -74,11 +80,12 @@ func tripleBetaConfig(v Values) TripleBetaConfig {
 
 // TripleBetaConfig holds the parameters of TripleBeta.
 type TripleBetaConfig struct {
-	Obstacles int // k_obstacles
-	MaxBank   int // k_max_bank; 0 means no limit
-	MaxTries  int // k_max_tries
-	// Axes holds the shape of the distribution along each axis: left to
-	// right, top left to bottom right, and bottom left to top right.
+	Obstacles int  // k_obstacles
+	MaxBank   int  // k_max_bank; 0 means no limit
+	MaxTries  int  // k_max_tries
+	Inset     bool // is_inset
+	// Axes holds the shape of the distribution over each cube coordinate:
+	// q, r and s.
 	Axes [3]BetaShape
 }
 
@@ -87,29 +94,30 @@ type BetaShape struct {
 	Alpha, Beta float64
 }
 
-// axes are the directions of the three axes through the centre, matching
-// TripleBetaConfig.Axes. Each runs from corner to corner.
-var axes = [3]board.Hex{{Q: 1, R: 0}, {Q: 0, R: 1}, {Q: 1, R: -1}}
-
-// TripleBeta places obstacles on b one at a time. For each try it samples
-// a position along each axis from that axis's beta distribution, scaled
-// so that 0.5 is the centre cell and 0 and 1 are the outer edges of the
-// corner cells. The try lands on the hex whose positions along the axes
-// best match the three samples (see fitHex). If that hex is off the
-// board, already has an obstacle, or would make a bank bigger than
-// MaxBank, the try fails.
+// TripleBeta places obstacles on b one at a time. Each cell has a fixed
+// weight (see hexWeights), and each try picks a cell of the board with
+// probability proportional to its weight. The try fails if that cell
+// already has an obstacle or one there would make a bank bigger than
+// MaxBank.
 //
 // It stops once it has placed cfg.Obstacles obstacles, used cfg.MaxTries
-// tries (successful or not), or no cell could take an obstacle. The trace
-// has a step for each obstacle placed, recording each cell that could
-// have taken it and the estimated chances of a try landing there.
+// tries (successful or not), or no free cell has any weight. The trace has
+// a step for each obstacle placed, recording each cell that could have
+// taken it with its chances and weight.
 func TripleBeta(b *board.Board, cfg TripleBetaConfig, rng *rand.Rand) Trace {
 	g := grid{b: b, index: b.Index()}
-	// Each axis has visibility cells either side of the centre cell, and
-	// the outer edge of a corner cell is half a cell beyond its centre.
-	halfLength := float64(b.Visibility()) + 0.5
-	landing := landingChances(b, cfg.Axes, halfLength)
+	weights := hexWeights(b, cfg.Axes, cfg.Inset)
 	trace := Trace{Metrics: tripleBetaMetrics}
+
+	total := 0.0
+	for _, w := range weights {
+		if !isFinite(w) {
+			trace.Note = "some hexes have infinite weight (a beta density with α or β below 1 is infinite at the " +
+				"board's edges); turn on is_inset"
+			return trace
+		}
+		total += w
+	}
 
 	tries := 0
 	for len(trace.Steps) < cfg.Obstacles {
@@ -118,15 +126,15 @@ func TripleBeta(b *board.Board, cfg TripleBetaConfig, rng *rand.Rand) Trace {
 			return !b.Cells[i].Obstacle && (cfg.MaxBank == 0 || banks.sizeWith(g, b.Cells[i].Hex) <= cfg.MaxBank)
 		}
 		var open []int
-		openLanding := 0.0
+		openWeight := 0.0
 		for i := range b.Cells {
-			if free(i) {
+			if free(i) && weights[i] > 0 {
 				open = append(open, i)
-				openLanding += landing[i]
+				openWeight += weights[i]
 			}
 		}
 		if len(open) == 0 {
-			trace.Note = "no free cell could take an obstacle"
+			trace.Note = "no free cell has any weight"
 			break
 		}
 
@@ -134,7 +142,7 @@ func TripleBeta(b *board.Board, cfg TripleBetaConfig, rng *rand.Rand) Trace {
 		for pick < 0 && tries < cfg.MaxTries {
 			tries++
 			stepTries++
-			if i, ok := g.index[sampleHex(rng, cfg.Axes, halfLength)]; ok && free(i) {
+			if i := weightedIndex(rng, weights, total); free(i) {
 				pick = i
 			}
 		}
@@ -146,11 +154,10 @@ func TripleBeta(b *board.Board, cfg TripleBetaConfig, rng *rand.Rand) Trace {
 
 		step := Step{Placed: b.Cells[pick].Hex, Tries: stepTries, Candidates: make([]Candidate, len(open))}
 		for j, i := range open {
-			chance := 0.0
-			if openLanding > 0 {
-				chance = landing[i] / openLanding
+			step.Candidates[j] = Candidate{
+				Hex:    b.Cells[i].Hex,
+				Values: []float64{weights[i] / openWeight, weights[i] / total, weights[i]},
 			}
-			step.Candidates[j] = Candidate{Hex: b.Cells[i].Hex, Values: []float64{chance, landing[i]}}
 		}
 		trace.Steps = append(trace.Steps, step)
 	}
@@ -160,83 +167,63 @@ func TripleBeta(b *board.Board, cfg TripleBetaConfig, rng *rand.Rand) Trace {
 // tripleBetaMetrics are the values TripleBeta records for each cell that
 // could take an obstacle.
 var tripleBetaMetrics = []Metric{
-	{Name: "chance", Description: "Chance of getting this obstacle (estimated)", Percent: true},
-	{Name: "landing", Description: "Chance a single try lands here (estimated)", Percent: true},
+	{Name: "chance", Description: "Chance of getting this obstacle", Percent: true},
+	{Name: "landing", Description: "Chance a single try lands here", Percent: true},
+	{Name: "weight", Description: "Weight (product of the three densities)"},
 }
 
-// sampleHex returns where one try lands.
-func sampleHex(rng *rand.Rand, shapes [3]BetaShape, halfLength float64) board.Hex {
-	var t [3]float64
-	for i, s := range shapes {
-		t[i] = (2*beta(rng, s.Alpha, s.Beta) - 1) * halfLength
-	}
-	return fitHex(t)
-}
-
-// fitHex returns the hex nearest the point whose positions along the
-// three axes best match t, in cells from the centre, in the least-squares
-// sense.
-//
-// A point's position along an axis is its projection onto that axis. The
-// axes are 60° apart, so the three projections of a point p onto unit
-// vectors u₁, u₂, u₃ satisfy Σ (p·uᵢ) uᵢ = 3/2 p. The least-squares point
-// for positions t is therefore 2/3 Σ tᵢ uᵢ: exactly the point itself if
-// the positions are consistent, and the closest compromise otherwise.
-func fitHex(t [3]float64) board.Hex {
-	var q, r float64
-	for i, dir := range axes {
-		q += 2.0 / 3 * t[i] * float64(dir.Q)
-		r += 2.0 / 3 * t[i] * float64(dir.R)
-	}
-	return board.Round(q, r)
-}
-
-// quantilePoints is how many points per axis landingChances evaluates.
-const quantilePoints = 96
-
-// landingChances estimates the chance that a try lands on each cell of b.
-// It evaluates fitHex at every combination of quantilePoints evenly
-// spaced quantiles of each axis's distribution, each combination being
-// equally likely, so cells that a try reaches very rarely can come out
-// as 0.
-func landingChances(b *board.Board, shapes [3]BetaShape, halfLength float64) []float64 {
-	var t [3][quantilePoints]float64
-	for i, s := range shapes {
-		for k := range quantilePoints {
-			x := betaQuantile((float64(k)+0.5)/quantilePoints, s.Alpha, s.Beta)
-			t[i][k] = (2*x - 1) * halfLength
-		}
-	}
-
-	// A dense lookup from position to cell, which is much faster than the
-	// board's index map in the loop below.
-	lo, hi := 0, 0
+// hexWeights returns the weight of each cell of b: the product of the beta
+// densities in shapes at its cube coordinates q, r and s, each scaled into
+// [0, 1]. Normally a coordinate x in [-R, R], where R is the board's
+// radius, scales to (x/R + 1)/2, so the board's extremes are at 0 and 1.
+// With inset it scales to the middle of its band, (x + R + ½)/(2R + 1).
+func hexWeights(b *board.Board, shapes [3]BetaShape, inset bool) []float64 {
+	radius := 0
 	for _, c := range b.Cells {
-		lo, hi = min(lo, c.Q, c.R), max(hi, c.Q, c.R)
+		radius = max(radius, abs(c.Q), abs(c.R), abs(c.Q+c.R))
 	}
-	width := hi - lo + 1
-	cellAt := make([]int, width*width)
-	for i := range cellAt {
-		cellAt[i] = -1
+	scale := func(x int) float64 {
+		switch {
+		case inset:
+			return (float64(x+radius) + 0.5) / float64(2*radius+1)
+		case radius == 0:
+			return 0.5
+		}
+		return (float64(x)/float64(radius) + 1) / 2
 	}
+	weights := make([]float64, len(b.Cells))
 	for i, c := range b.Cells {
-		cellAt[(c.Q-lo)*width+c.R-lo] = i
+		w := 1.0
+		for j, x := range [3]int{c.Q, c.R, -c.Q - c.R} {
+			w *= betaPDF(scale(x), shapes[j].Alpha, shapes[j].Beta)
+		}
+		weights[i] = w
 	}
+	return weights
+}
 
-	chances := make([]float64, len(b.Cells))
-	weight := 1.0 / (quantilePoints * quantilePoints * quantilePoints)
-	for _, t1 := range t[0] {
-		for _, t2 := range t[1] {
-			for _, t3 := range t[2] {
-				h := fitHex([3]float64{t1, t2, t3})
-				if h.Q < lo || h.Q > hi || h.R < lo || h.R > hi {
-					continue
-				}
-				if i := cellAt[(h.Q-lo)*width+h.R-lo]; i >= 0 {
-					chances[i] += weight
-				}
-			}
+// weightedIndex returns a random index into weights, chosen with
+// probability proportional to its weight. total must be their sum.
+func weightedIndex(rng *rand.Rand, weights []float64, total float64) int {
+	r := rng.Float64() * total
+	fallback := 0
+	for i, w := range weights {
+		if r < w {
+			return i
+		}
+		r -= w
+		if w > 0 {
+			fallback = i
 		}
 	}
-	return chances
+	// Rounding left r just past the end: take the last index that had a
+	// chance.
+	return fallback
+}
+
+func abs(x int) int {
+	if x < 0 {
+		return -x
+	}
+	return x
 }

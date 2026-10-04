@@ -79,43 +79,42 @@ cells near a corner can score more than 1 in some directions (up to 8/4 here).
 
 ### Triple Beta
 
-Places obstacles one at a time, by trying hexes until one can take the
-obstacle. Each try:
+Uses three beta distributions as weights over the board's hexes, one for each
+cube coordinate (`q`, `r` and `s`, with `q + r + s = 0`, each from −R to R on a
+board of radius R):
 
-1. Samples a position along each of the three axes through the centre, each
-   from its own beta distribution (`k_alpha_i`, `k_beta_i`). Each distribution
-   is scaled so that 0.5 is the centre cell and 0 and 1 are the outer edges of
-   the corner cells at either end of its axis:
-   - axis 1: left corner (0) to right corner (1)
-   - axis 2: top left corner to bottom right corner
-   - axis 3: bottom left corner to top right corner
-2. Lands on the hex whose positions along the three axes best match the
-   samples. Three positions over-determine a point on the page (two would do),
-   so this takes the least-squares fit: with the axes 60° apart, that's
-   2/3 × the sum of each sample times its axis direction. It's exactly the
-   right hex when the three samples agree, and the closest compromise when
-   they don't.
-3. Fails if that hex is off the board, already has an obstacle, or would make
-   a bank bigger than `k_max_bank`.
+1. Scale each coordinate into [0, 1]: `x → (x/R + 1)/2`.
+2. Weight each hex by the product of the three beta densities at its scaled
+   coordinates: `w = f_q(Q) · f_r(R') · f_s(S)`, using `k_alpha_1`/`k_beta_1`
+   for `q`, `_2` for `r` and `_3` for `s`.
+3. Each try picks a hex of the board with probability `w / Σw`. It fails if the
+   hex already has an obstacle or would make a bank bigger than `k_max_bank`.
 
-It stops after placing `k_obstacles` obstacles, after `k_max_tries` tries in
-all (successful or not; default twice the number of cells), or when no cell
-could take an obstacle. Failed tries don't get their own steps, but each step
-says how many tries it took.
+Equal coordinate values form parallel bands across the board, so each
+distribution sets how much each band of one family is favoured:
 
-`is_symmetric` forces α = β for each axis, and `is_axes_shared` makes axes 2
-and 3 use axis 1's α and β. Forced values show locked, the same way as
+- axis 1 (`q`): lower left edge (0) to upper right edge (1)
+- axis 2 (`r`): top edge (0) to bottom edge (1)
+- axis 3 (`s`): lower right edge (0) to upper left edge (1)
+
+Beta(1, 1) is flat, so the default (all three flat) is exactly uniform.
+Symmetric shapes like Beta(2, 2) favour the middle, and asymmetric ones like
+Beta(2, 5) favour one side. The same symmetric shape on every axis gives sixfold
+symmetry. `is_symmetric` forces α = β for each axis, and `is_axes_shared` makes
+axes 2 and 3 use axis 1's α and β. Forced values show locked, the same way as
 Evolved's `f_a'`.
 
-Because inconsistent samples get averaged, obstacles lean towards the centre
-whatever the shape. Even U-shaped distributions (α = β < 1) mostly send tries
-off the board rather than to the rim. With α = β = 1 (uniform along each axis),
-a try lands on the centre cell about 2.6% of the time, on each rim cell about
-0.9%, and off the board about 15%.
+It stops after placing `k_obstacles` obstacles, after `k_max_tries` tries in
+all (successful or not; default twice the number of cells), or when no free
+cell has any weight. Failed tries don't get their own steps, but each step says
+how many tries it took. The heatmap's chances are exact.
 
-The heatmap's chances are estimated by evaluating a grid of quantiles of each
-distribution (96 per axis, each combination equally likely), rather than
-worked out exactly, which has no closed form.
+**Edges.** A density of 0 at 0 or 1 (α or β > 1) gives the matching edge hexes
+no weight: with Beta(2, 2) on every axis, no perimeter hex can be chosen. A
+density with α or β < 1 is infinite at 0 or 1, which gives edge hexes infinite
+weight, so it won't place anything. `is_inset` fixes both: it scales each
+coordinate to the middle of its band, `(x + R + ½)/(2R + 1)`, so the edges sit
+just inside (0, 1).
 
 ## Running
 

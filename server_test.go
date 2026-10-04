@@ -89,6 +89,19 @@ func TestGenerateTripleBeta(t *testing.T) {
 	}
 }
 
+func TestGenerateNothingEncodesEmptySteps(t *testing.T) {
+	for _, query := range []string{
+		"algorithm=uniform&n=0",
+		"algorithm=evolved&k_obstacles=0",
+		"algorithm=triple_beta&k_alpha_1=0.5",
+	} {
+		rec := get(t, "/api/generate?"+query)
+		if body := rec.Body.String(); !strings.Contains(body, `"steps":[]`) {
+			t.Errorf("GET /api/generate?%s: trace steps aren't an empty list: %s", query, body)
+		}
+	}
+}
+
 func TestGenerateFillsBoard(t *testing.T) {
 	resp := generate(t, "algorithm=uniform&n=1000")
 	if resp.Placed != len(resp.Board.Cells) {

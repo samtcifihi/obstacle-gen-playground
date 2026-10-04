@@ -36,72 +36,20 @@ func logGamma(rng *rand.Rand, shape float64) float64 {
 	}
 }
 
-// betaCDF returns P(X <= x) for X ~ Beta(a, b): the regularized incomplete
-// beta function, evaluated with a continued fraction (Numerical Recipes,
-// section 6.4).
-func betaCDF(x, a, b float64) float64 {
-	if x <= 0 {
-		return 0
-	}
-	if x >= 1 {
-		return 1
-	}
+// betaPDF returns the density of the Beta(a, b) distribution at x in
+// [0, 1]. At 0 it's infinite if a < 1 and 0 if a > 1, and likewise at 1
+// for b.
+func betaPDF(x, a, b float64) float64 {
 	lgab, _ := math.Lgamma(a + b)
 	lga, _ := math.Lgamma(a)
 	lgb, _ := math.Lgamma(b)
-	front := math.Exp(lgab - lga - lgb + a*math.Log(x) + b*math.Log1p(-x))
-	// The continued fraction converges fastest on this side of the mean.
-	if x < (a+1)/(a+b+2) {
-		return front * betaContinuedFraction(x, a, b) / a
+	logDensity := lgab - lga - lgb
+	// Skip exponents of 0, so x^0 is 1 even at x = 0, rather than 0·(-Inf).
+	if a != 1 {
+		logDensity += (a - 1) * math.Log(x)
 	}
-	return 1 - front*betaContinuedFraction(1-x, b, a)/b
-}
-
-// betaContinuedFraction evaluates the continued fraction for the
-// incomplete beta function by the modified Lentz method.
-func betaContinuedFraction(x, a, b float64) float64 {
-	const (
-		maxIterations = 10_000
-		epsilon       = 1e-15
-		tiny          = 1e-300
-	)
-	clamp := func(v float64) float64 {
-		if math.Abs(v) < tiny {
-			return tiny
-		}
-		return v
+	if b != 1 {
+		logDensity += (b - 1) * math.Log1p(-x)
 	}
-	c, d := 1.0, 1/clamp(1-(a+b)*x/(a+1))
-	h := d
-	for m := 1.0; m <= maxIterations; m++ {
-		// Even step.
-		aa := m * (b - m) * x / ((a + 2*m - 1) * (a + 2*m))
-		d = 1 / clamp(1+aa*d)
-		c = clamp(1 + aa/c)
-		h *= d * c
-		// Odd step.
-		aa = -(a + m) * (a + b + m) * x / ((a + 2*m) * (a + 2*m + 1))
-		d = 1 / clamp(1+aa*d)
-		c = clamp(1 + aa/c)
-		delta := d * c
-		h *= delta
-		if math.Abs(delta-1) < epsilon {
-			break
-		}
-	}
-	return h
-}
-
-// betaQuantile returns the x with betaCDF(x, a, b) = p, found by bisection.
-func betaQuantile(p, a, b float64) float64 {
-	lo, hi := 0.0, 1.0
-	for range 64 {
-		mid := (lo + hi) / 2
-		if betaCDF(mid, a, b) < p {
-			lo = mid
-		} else {
-			hi = mid
-		}
-	}
-	return (lo + hi) / 2
+	return math.Exp(logDensity)
 }

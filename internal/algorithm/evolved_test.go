@@ -120,13 +120,6 @@ func TestEvolvedSkipsUndefinedScores(t *testing.T) {
 	}
 }
 
-func abs(x int) int {
-	if x < 0 {
-		return -x
-	}
-	return x
-}
-
 func TestDistances(t *testing.T) {
 	b := board.NewHexagon(5)
 	g := grid{b: b, index: b.Index()}

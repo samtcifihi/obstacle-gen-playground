@@ -1,10 +1,6 @@
 package board
 
-import (
-	"math"
-	"math/rand/v2"
-	"testing"
-)
+import "testing"
 
 func TestNewHexagonCellCount(t *testing.T) {
 	// A hexagon with edge length L has 3L(L-1)+1 hexes.
@@ -63,37 +59,6 @@ func TestVisibility(t *testing.T) {
 	for edge := 1; edge <= 6; edge++ {
 		if got := NewHexagon(edge).Visibility(); got != edge-1 {
 			t.Errorf("NewHexagon(%d).Visibility() = %d, want %d", edge, got, edge-1)
-		}
-	}
-}
-
-func TestRound(t *testing.T) {
-	// Squared distance between points in cube coordinates, proportional to
-	// the squared distance on the page.
-	dist2 := func(q1, r1, q2, r2 float64) float64 {
-		dq, dr := q1-q2, r1-r2
-		return dq*dq + dr*dr + (dq+dr)*(dq+dr)
-	}
-	rng := rand.New(rand.NewPCG(1, 0))
-	for range 10_000 {
-		q, r := rng.Float64()*12-6, rng.Float64()*12-6
-		got := Round(q, r)
-		// Find the nearest hex by brute force, skipping points that are
-		// nearly equidistant from two.
-		best, second := math.Inf(1), math.Inf(1)
-		var want Hex
-		for hq := -8; hq <= 8; hq++ {
-			for hr := -8; hr <= 8; hr++ {
-				d := dist2(q, r, float64(hq), float64(hr))
-				if d < best {
-					best, second, want = d, best, Hex{Q: hq, R: hr}
-				} else if d < second {
-					second = d
-				}
-			}
-		}
-		if second-best > 1e-9 && got != want {
-			t.Errorf("Round(%v, %v) = %v, want the nearest hex %v", q, r, got, want)
 		}
 	}
 }

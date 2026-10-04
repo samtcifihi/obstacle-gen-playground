@@ -51,7 +51,11 @@ type Algorithm struct {
 // Run places obstacles on b using parameters v from a.Parse. The trace
 // has a step for each obstacle placed.
 func (a Algorithm) Run(b *board.Board, v Values, rng *rand.Rand) Trace {
-	return a.run(b, v, rng)
+	trace := a.run(b, v, rng)
+	if trace.Steps == nil {
+		trace.Steps = []Step{} // so it encodes as [], not null
+	}
+	return trace
 }
 
 // Parse reads a's parameters from q, using the default for any that are
