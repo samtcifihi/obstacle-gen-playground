@@ -69,22 +69,21 @@ func (b *Board) Index() map[Hex]int {
 }
 
 // Visibility is the furthest distance from the board's centre cell to the
-// edge of the board, ignoring obstacles: the most steps it takes to walk
-// off the board from the centre in a straight line. On a hexagon that's
-// its edge length, since the centre cell is followed by edge length - 1
-// more cells before the rim.
+// edge of the board, ignoring obstacles, counted in the cells between them:
+// a cell next to the edge is at distance 0. On a hexagon that's its edge
+// length - 1, the number of cells from the centre out to the rim.
 func (b *Board) Visibility() int {
 	index := b.Index()
 	visibility := 0
 	for _, dir := range (Hex{}).Neighbours() {
-		steps := 1
+		cells := 0
 		for h := dir; ; h = h.Add(dir) {
 			if _, ok := index[h]; !ok {
 				break
 			}
-			steps++
+			cells++
 		}
-		visibility = max(visibility, steps)
+		visibility = max(visibility, cells)
 	}
 	return visibility
 }

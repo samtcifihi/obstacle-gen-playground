@@ -13,8 +13,8 @@ var scoredAlgorithm = Algorithm{
 	Name: "Scored",
 	Description: "Places obstacles one at a time. Each round, every empty cell is scored by how far it can see " +
 		"before an obstacle, how far it is from the edge, and some noise, then the next obstacle goes on a cell " +
-		"chosen by score. Distances are divided by visibility: the most steps it takes to walk off an empty " +
-		"board from its centre cell, which on a hexagon is its edge length.",
+		"chosen by score. Distances are divided by visibility: the number of cells between the centre cell " +
+		"and the edge of an empty board, which on a hexagon is its edge length minus 1.",
 	Params: slices.Concat(
 		[]Param{
 			{Name: "k_obstacles", Group: "General", Type: Int, Default: 16,
@@ -37,7 +37,7 @@ var scoredAlgorithm = Algorithm{
 				Description: "Choose a random cell weighted by score, otherwise the highest-scoring cell"},
 		},
 	),
-	run: func(b *board.Board, v Values, rng *rand.Rand) int {
+	run: func(b *board.Board, v Values, rng *rand.Rand) Trace {
 		return Scored(b, scoredConfig(v), rng)
 	},
 }
@@ -171,14 +171,14 @@ func (c Conjugate) Apply(s [3][2]float64) float64 {
 // Scored places obstacles on b one at a time. Each round it scores the
 // cells, then places an obstacle on one chosen by score:
 //
-//  1. Empty cells start with a score of 0. Obstacles have no score, so
-//     are ignored by the rest of the round and can't be chosen.
+//  1. Empty cells start with a score of 0. Obstacles have no score, so are
+//     ignored by the rest of the round and can't be chosen.
 //  2. Cells where an obstacle would make a bank (contiguous group of
 //     obstacles) bigger than MaxBank have no score.
 //  3. Add ObstacleTerm of the number of empty cells in each direction
 //     before an obstacle, capped at the board's visibility, divided by
-//     visibility. The edge of the board doesn't block: a direction with
-//     no obstacle within visibility counts as visibility.
+//     visibility. The edge of the board doesn't block: a direction with no
+//     obstacle within visibility counts as visibility.
 //  4. Add EdgeTerm of the number of empty cells in each direction before
 //     the edge of the board, divided by visibility.
 //  5. Add (s - 0.5) * BetaCoef, where s ~ Beta(Beta, Beta).
@@ -187,14 +187,16 @@ func (c Conjugate) Apply(s [3][2]float64) float64 {
 //     otherwise on the highest-scoring cell, breaking ties randomly.
 //
 // It stops once it has placed cfg.Obstacles obstacles or no cell has a
-// score, and returns the number placed.
-func Scored(b *board.Board, cfg ScoredConfig, rng *rand.Rand) int {
+// score. The trace has a step for each obstacle placed, recording every
+// scored cell's values for scoredMetrics.
+func Scored(b *board.Board, cfg ScoredConfig, rng *rand.Rand) Trace {
 	g := grid{b: b, index: b.Index()}
-	visibility := b.Visibility()
-	placed := 0
-	for ; placed < cfg.Obstacles; placed++ {
+	// A one-cell board has visibility 0, but then every distance is 0 too.
+	visibility := max(b.Visibility(), 1)
+	trace := Trace{Metrics: scoredMetrics}
+	for len(trace.Steps) < cfg.Obstacles {
 		banks := g.banks()
-		var candidates []candidate
+		var cells []scoredCell
 		for i, c := range b.Cells {
 			if c.Obstacle || (cfg.MaxBank > 0 && banks.sizeWith(g, c.Hex) > cfg.MaxBank) {
 				continue
@@ -206,82 +208,109 @@ func Scored(b *board.Board, cfg ScoredConfig, rng *rand.Rand) int {
 					toEdge[a][s] = float64(g.emptyToEdge(c.Hex, dir))
 				}
 			}
-			score := cfg.ObstacleTerm.Apply(clearance) / float64(visibility)
-			score += cfg.EdgeTerm.Apply(toEdge) / float64(visibility)
-			score += (beta(rng, cfg.Beta, cfg.Beta) - 0.5) * cfg.BetaCoef
-			candidates = append(candidates, candidate{cell: i, score: score})
+			sc := scoredCell{
+				cell:      i,
+				obstacles: cfg.ObstacleTerm.Apply(clearance) / float64(visibility),
+				edge:      cfg.EdgeTerm.Apply(toEdge) / float64(visibility),
+				noise:     (beta(rng, cfg.Beta, cfg.Beta) - 0.5) * cfg.BetaCoef,
+			}
+			sc.score = sc.obstacles + sc.edge + sc.noise
+			cells = append(cells, sc)
 		}
-		if len(candidates) == 0 {
+		if len(cells) == 0 {
 			break
 		}
 
-		stretch(candidates, cfg.Stretching, cfg.Stretch)
+		stretch(cells, cfg.Stretching, cfg.Stretch)
 		var pick int
 		if cfg.Weighted {
-			pick = weightedChoice(candidates, rng)
+			pick = weightedChoice(cells, rng)
 		} else {
-			pick = bestChoice(candidates, rng)
+			pick = bestChoice(cells, rng)
 		}
 		b.Cells[pick].Obstacle = true
+
+		step := Step{Placed: b.Cells[pick].Hex, Candidates: make([]Candidate, len(cells))}
+		for i, chance := range chances(cells, cfg.Weighted) {
+			c := cells[i]
+			step.Candidates[i] = Candidate{
+				Hex:    b.Cells[c.cell].Hex,
+				Values: []float64{c.score, chance, c.weight, c.obstacles, c.edge, c.noise},
+			}
+		}
+		trace.Steps = append(trace.Steps, step)
 	}
-	return placed
+	return trace
 }
 
-type candidate struct {
-	cell  int // index into Board.Cells
-	score float64
+// scoredMetrics are the values Scored records for each scored cell.
+var scoredMetrics = []Metric{
+	{Name: "score", Description: "Score (steps 1–5)"},
+	chanceMetric,
+	{Name: "weight", Description: "Score after stretching or shifting (step 6)"},
+	{Name: "obstacles", Description: "Distance to obstacles term (step 3)"},
+	{Name: "edge", Description: "Distance to edge term (step 4)"},
+	{Name: "noise", Description: "Noise term (step 5)"},
 }
 
-// stretch makes every score positive so they can be used as weights. When
-// stretching it maps each score s to e^(k(s - max)), where max is the
-// highest score, so the best cell gets 1 and larger k favours it more.
-// Otherwise it maps s to s + 1 - min, where min is the lowest score.
-func stretch(cs []candidate, stretching bool, k float64) {
-	lo, hi := cs[0].score, cs[0].score
-	for _, c := range cs[1:] {
+// scoredCell is a cell that has a score in the current round.
+type scoredCell struct {
+	cell                   int     // index into Board.Cells
+	obstacles, edge, noise float64 // terms from steps 3, 4 and 5
+	score                  float64 // their sum
+	weight                 float64 // score after step 6
+}
+
+// stretch sets each cell's weight from its score, making every weight
+// positive. When stretching it maps each score s to e^(k(s - max)), where
+// max is the highest score, so the best cell gets 1 and larger k favours it
+// more. Otherwise it maps s to s + 1 - min, where min is the lowest score.
+func stretch(cells []scoredCell, stretching bool, k float64) {
+	lo, hi := cells[0].score, cells[0].score
+	for _, c := range cells[1:] {
 		lo, hi = min(lo, c.score), max(hi, c.score)
 	}
-	for i := range cs {
+	for i := range cells {
 		if stretching {
-			cs[i].score = math.Exp(k * (cs[i].score - hi))
+			cells[i].weight = math.Exp(k * (cells[i].score - hi))
 		} else {
-			cs[i].score += 1 - lo
+			cells[i].weight = cells[i].score + 1 - lo
 		}
 	}
 }
 
-// weightedChoice returns the cell of a random candidate, chosen with
-// probability proportional to its score.
-func weightedChoice(cs []candidate, rng *rand.Rand) int {
+// weightedChoice returns a random cell, chosen with probability
+// proportional to its weight.
+func weightedChoice(cells []scoredCell, rng *rand.Rand) int {
 	total := 0.0
-	for _, c := range cs {
-		total += c.score
+	for _, c := range cells {
+		total += c.weight
 	}
 	r := rng.Float64() * total
-	fallback := cs[0].cell
-	for _, c := range cs {
-		if r < c.score {
+	fallback := cells[0].cell
+	for _, c := range cells {
+		if r < c.weight {
 			return c.cell
 		}
-		r -= c.score
-		if c.score > 0 {
+		r -= c.weight
+		if c.weight > 0 {
 			fallback = c.cell
 		}
 	}
-	// Rounding left r just past the end: take the last candidate that
-	// had a chance.
+	// Rounding left r just past the end: take the last cell that had a
+	// chance.
 	return fallback
 }
 
-// bestChoice returns the cell of the highest-scoring candidate, choosing
-// uniformly at random between ties.
-func bestChoice(cs []candidate, rng *rand.Rand) int {
-	best, ties := cs[0], 1
-	for _, c := range cs[1:] {
+// bestChoice returns the cell with the highest weight, choosing uniformly at
+// random between ties.
+func bestChoice(cells []scoredCell, rng *rand.Rand) int {
+	best, ties := cells[0], 1
+	for _, c := range cells[1:] {
 		switch {
-		case c.score > best.score:
+		case c.weight > best.weight:
 			best, ties = c, 1
-		case c.score == best.score:
+		case c.weight == best.weight:
 			ties++
 			if rng.IntN(ties) == 0 {
 				best = c
@@ -289,6 +318,37 @@ func bestChoice(cs []candidate, rng *rand.Rand) int {
 		}
 	}
 	return best.cell
+}
+
+// chances returns each cell's probability of being picked by weightedChoice
+// (if weighted) or bestChoice.
+func chances(cells []scoredCell, weighted bool) []float64 {
+	p := make([]float64, len(cells))
+	if weighted {
+		total := 0.0
+		for _, c := range cells {
+			total += c.weight
+		}
+		for i, c := range cells {
+			p[i] = c.weight / total
+		}
+		return p
+	}
+	best, ties := cells[0].weight, 0
+	for _, c := range cells {
+		best = max(best, c.weight)
+	}
+	for _, c := range cells {
+		if c.weight == best {
+			ties++
+		}
+	}
+	for i, c := range cells {
+		if c.weight == best {
+			p[i] = 1 / float64(ties)
+		}
+	}
+	return p
 }
 
 // grid looks up cells on a board by position.

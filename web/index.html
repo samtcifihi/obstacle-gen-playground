@@ -29,7 +29,23 @@
       </form>
       <section class="output">
         <p id="status" role="status"></p>
+        <div class="stepper">
+          <button type="button" id="first" class="icon secondary" title="Empty board" aria-label="Empty board">«</button>
+          <button type="button" id="prev" class="icon secondary" title="Previous obstacle (←)" aria-label="Previous obstacle">‹</button>
+          <input type="range" id="frame" min="0" max="0" value="0" aria-label="Placement step">
+          <button type="button" id="next" class="icon secondary" title="Next obstacle (→)" aria-label="Next obstacle">›</button>
+          <button type="button" id="last" class="icon secondary" title="Final board" aria-label="Final board">»</button>
+        </div>
+        <div class="frame-info">
+          <span id="frame-label"></span>
+          <label class="metric">
+            <span>Heatmap</span>
+            <select id="metric"></select>
+          </label>
+        </div>
         <svg id="board" role="img" aria-label="Hex board"></svg>
+        <div id="legend" class="legend"></div>
+        <p id="cell-info" class="cell-info"></p>
       </section>
     </div>
   </main>

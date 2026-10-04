@@ -31,12 +31,12 @@ type Algorithm struct {
 	Name        string  `json:"name"`
 	Description string  `json:"description"`
 	Params      []Param `json:"params"`
-	run         func(b *board.Board, v Values, rng *rand.Rand) int
+	run         func(b *board.Board, v Values, rng *rand.Rand) Trace
 }
 
-// Run places obstacles on b using parameters v from a.Parse. It returns
-// the number of obstacles placed.
-func (a Algorithm) Run(b *board.Board, v Values, rng *rand.Rand) int {
+// Run places obstacles on b using parameters v from a.Parse. The trace
+// has a step for each obstacle placed.
+func (a Algorithm) Run(b *board.Board, v Values, rng *rand.Rand) Trace {
 	return a.run(b, v, rng)
 }
 

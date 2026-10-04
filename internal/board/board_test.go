@@ -57,8 +57,8 @@ func TestNeighbours(t *testing.T) {
 
 func TestVisibility(t *testing.T) {
 	for edge := 1; edge <= 6; edge++ {
-		if got := NewHexagon(edge).Visibility(); got != edge {
-			t.Errorf("NewHexagon(%d).Visibility() = %d, want %d", edge, got, edge)
+		if got := NewHexagon(edge).Visibility(); got != edge-1 {
+			t.Errorf("NewHexagon(%d).Visibility() = %d, want %d", edge, got, edge-1)
 		}
 	}
 }

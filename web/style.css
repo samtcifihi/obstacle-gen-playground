@@ -10,6 +10,7 @@
   --obstacle: #3d3a35;
   --accent: #2f6fdf;
   --on-accent: #ffffff;
+  --marker: #eb6834;
   --error: #b3261e;
 }
 
@@ -25,6 +26,7 @@
     --obstacle: #d8d2c4;
     --accent: #6b9cf0;
     --on-accent: #0e1a2e;
+    --marker: #d95926;
     --error: #f2b8b5;
   }
 }
@@ -87,7 +89,7 @@ form {
 
 .top {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 12px;
 }
 
@@ -220,12 +222,104 @@ button.link {
   color: var(--error);
 }
 
+.stepper {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.stepper input[type="range"] {
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  border: none;
+  background: none;
+  accent-color: var(--accent);
+}
+
+button.icon {
+  width: 34px;
+  padding: 4px 0;
+  font-size: 1.1rem;
+  line-height: 1.2;
+}
+
+.frame-info {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+  margin: 8px 0;
+  font-size: 0.875rem;
+}
+
+#frame-label {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.metric {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  color: var(--muted);
+}
+
+.metric select {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.metric select:disabled {
+  opacity: 0.5;
+}
+
 #board {
   display: block;
   width: 100%;
   max-width: 640px;
   height: auto;
   margin: 0 auto;
+}
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px 16px;
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ramp-bar {
+  display: inline-block;
+  width: 96px;
+  height: 10px;
+  border-radius: 2px;
+}
+
+.swatch {
+  width: 18px;
+  height: 18px;
+}
+
+.cell-info {
+  min-height: 2.8em;
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
 }
 
 .hex {
@@ -236,4 +330,25 @@ button.link {
 
 .hex.obstacle {
   fill: var(--obstacle);
+}
+
+.hex.blocked {
+  fill: url(#blocked);
+}
+
+.hatch-bg {
+  fill: var(--hex);
+}
+
+.hatch-line {
+  stroke: var(--hex-stroke);
+  stroke-width: 1.5;
+}
+
+.next-marker {
+  fill: none;
+  stroke: var(--marker);
+  stroke-width: 4;
+  stroke-linejoin: round;
+  pointer-events: none;
 }

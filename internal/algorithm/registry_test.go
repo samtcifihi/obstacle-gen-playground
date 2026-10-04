@@ -56,7 +56,7 @@ func TestRunWithDefaults(t *testing.T) {
 			t.Fatalf("%s: %v", a.ID, err)
 		}
 		b := board.NewHexagon(5)
-		if placed := a.Run(b, v, newRNG(1)); placed == 0 {
+		if trace := a.Run(b, v, newRNG(1)); len(trace.Steps) == 0 {
 			t.Errorf("%s placed no obstacles with its defaults", a.ID)
 		}
 	}

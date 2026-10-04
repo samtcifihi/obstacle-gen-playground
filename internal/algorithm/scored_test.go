@@ -1,6 +1,7 @@
 package algorithm
 
 import (
+	"fmt"
 	"math"
 	"net/url"
 	"testing"
@@ -62,10 +63,10 @@ func TestDistances(t *testing.T) {
 	centre := board.Hex{}
 
 	// On an empty board the centre sees past the edge in every direction,
-	// and has 4 cells between it and the edge.
+	// and has 4 cells (the board's visibility) between it and the edge.
 	for _, dir := range centre.Neighbours() {
-		if got := g.clearance(centre, dir, 5); got != 5 {
-			t.Errorf("clearance from centre towards %v = %d, want 5", dir, got)
+		if got := g.clearance(centre, dir, 4); got != 4 {
+			t.Errorf("clearance from centre towards %v = %d, want 4", dir, got)
 		}
 		if got := g.emptyToEdge(centre, dir); got != 4 {
 			t.Errorf("emptyToEdge from centre towards %v = %d, want 4", dir, got)
@@ -80,10 +81,10 @@ func TestDistances(t *testing.T) {
 	// Obstacles block clearance but are skipped when counting to the edge.
 	b.Cells[g.index[board.Hex{Q: 1}]].Obstacle = true
 	b.Cells[g.index[board.Hex{Q: -3}]].Obstacle = true
-	if got := g.clearance(centre, east, 5); got != 0 {
+	if got := g.clearance(centre, east, 4); got != 0 {
 		t.Errorf("clearance with an adjacent obstacle = %d, want 0", got)
 	}
-	if got := g.clearance(centre, west, 5); got != 2 {
+	if got := g.clearance(centre, west, 4); got != 2 {
 		t.Errorf("clearance with an obstacle 3 away = %d, want 2", got)
 	}
 	if got := g.clearance(centre, west, 2); got != 2 {
@@ -121,25 +122,25 @@ func TestBanks(t *testing.T) {
 }
 
 func TestStretch(t *testing.T) {
-	cs := []candidate{{score: -0.5}, {score: 0.25}, {score: 1}}
+	cs := []scoredCell{{score: -0.5}, {score: 0.25}, {score: 1}}
 	stretch(cs, true, 2)
 	for i, want := range []float64{math.Exp(-3), math.Exp(-1.5), 1} {
-		if math.Abs(cs[i].score-want) > 1e-12 {
-			t.Errorf("stretched score %d = %v, want %v", i, cs[i].score, want)
+		if math.Abs(cs[i].weight-want) > 1e-12 {
+			t.Errorf("stretched score %d = %v, want %v", i, cs[i].weight, want)
 		}
 	}
 
-	cs = []candidate{{score: -0.5}, {score: 0.25}, {score: 1}}
+	cs = []scoredCell{{score: -0.5}, {score: 0.25}, {score: 1}}
 	stretch(cs, false, 2)
 	for i, want := range []float64{1, 1.75, 2.5} {
-		if math.Abs(cs[i].score-want) > 1e-12 {
-			t.Errorf("shifted score %d = %v, want %v", i, cs[i].score, want)
+		if math.Abs(cs[i].weight-want) > 1e-12 {
+			t.Errorf("shifted score %d = %v, want %v", i, cs[i].weight, want)
 		}
 	}
 }
 
 func TestWeightedChoice(t *testing.T) {
-	cs := []candidate{{cell: 0, score: 1}, {cell: 1, score: 3}, {cell: 2, score: 0}}
+	cs := []scoredCell{{cell: 0, weight: 1}, {cell: 1, weight: 3}, {cell: 2, weight: 0}}
 	rng := newRNG(3)
 	counts := make([]int, 3)
 	const trials = 40_000
@@ -156,11 +157,11 @@ func TestWeightedChoice(t *testing.T) {
 
 func TestBestChoice(t *testing.T) {
 	rng := newRNG(3)
-	if got := bestChoice([]candidate{{cell: 0, score: 1}, {cell: 1, score: 3}, {cell: 2, score: 2}}, rng); got != 1 {
+	if got := bestChoice([]scoredCell{{cell: 0, weight: 1}, {cell: 1, weight: 3}, {cell: 2, weight: 2}}, rng); got != 1 {
 		t.Errorf("bestChoice picked cell %d, want 1", got)
 	}
 
-	ties := []candidate{{cell: 0, score: 1}, {cell: 1, score: 2}, {cell: 2, score: 2}, {cell: 3, score: 2}}
+	ties := []scoredCell{{cell: 0, weight: 1}, {cell: 1, weight: 2}, {cell: 2, weight: 2}, {cell: 3, weight: 2}}
 	counts := make([]int, 4)
 	for range 30_000 {
 		counts[bestChoice(ties, rng)]++
@@ -181,7 +182,7 @@ func TestScoredPlacesObstacles(t *testing.T) {
 		cfg.Obstacles = n
 		b := board.NewHexagon(5)
 		want := min(n, len(b.Cells))
-		if got := Scored(b, cfg, newRNG(1)); got != want {
+		if got := len(Scored(b, cfg, newRNG(1)).Steps); got != want {
 			t.Errorf("Scored(k_obstacles=%d) returned %d, want %d", n, got, want)
 		}
 		if got := countObstacles(b); got != want {
@@ -198,7 +199,7 @@ func TestScoredMaxBank(t *testing.T) {
 			cfg.MaxBank = maxBank
 			cfg.Weighted = weighted
 			b := board.NewHexagon(5)
-			placed := Scored(b, cfg, newRNG(uint64(maxBank)))
+			placed := len(Scored(b, cfg, newRNG(uint64(maxBank))).Steps)
 			g := grid{b: b, index: b.Index()}
 			bs := g.banks()
 			for bank, size := range bs.sizes {
@@ -242,5 +243,102 @@ func TestScoredIsReproducible(t *testing.T) {
 		if a.Cells[i] != b.Cells[i] {
 			t.Fatalf("same seed gave different boards at cell %d: %v vs %v", i, a.Cells[i], b.Cells[i])
 		}
+	}
+}
+
+func TestChances(t *testing.T) {
+	cells := []scoredCell{{weight: 1}, {weight: 3}, {weight: 0}, {weight: 3}}
+	for _, tt := range []struct {
+		weighted bool
+		want     []float64
+	}{
+		{weighted: true, want: []float64{1.0 / 7, 3.0 / 7, 0, 3.0 / 7}},
+		{weighted: false, want: []float64{0, 0.5, 0, 0.5}},
+	} {
+		got := chances(cells, tt.weighted)
+		for i := range got {
+			if math.Abs(got[i]-tt.want[i]) > 1e-12 {
+				t.Errorf("weighted=%v: chances = %v, want %v", tt.weighted, got, tt.want)
+				break
+			}
+		}
+	}
+}
+
+func TestScoredCentreTermsOnEmptyBoard(t *testing.T) {
+	// The centre is visibility cells from the edge and sees no obstacles,
+	// so both distance terms are 1 for any conjugate that averages.
+	cfg := defaultScoredConfig(t)
+	cfg.Obstacles = 1
+	trace := Scored(board.NewHexagon(5), cfg, newRNG(1))
+	for _, c := range trace.Steps[0].Candidates {
+		if c.Hex != (board.Hex{}) {
+			continue
+		}
+		obstacles, edge := c.Values[metricIndex(t, trace, "obstacles")], c.Values[metricIndex(t, trace, "edge")]
+		if math.Abs(obstacles-1) > 1e-12 || math.Abs(edge-1) > 1e-12 {
+			t.Errorf("centre has obstacles term %v and edge term %v, want 1 and 1", obstacles, edge)
+		}
+		return
+	}
+	t.Fatal("centre wasn't a candidate on the empty board")
+}
+
+func metricIndex(t *testing.T, trace Trace, name string) int {
+	t.Helper()
+	for i, m := range trace.Metrics {
+		if m.Name == name {
+			return i
+		}
+	}
+	t.Fatalf("trace has no %q metric", name)
+	return -1
+}
+
+// checkTrace checks that trace is consistent with the final board b, which
+// started empty.
+func checkTrace(t *testing.T, name string, b *board.Board, trace Trace) {
+	t.Helper()
+	index := b.Index()
+	placed := make(map[board.Hex]bool)
+	chance := metricIndex(t, trace, "chance")
+	for i, step := range trace.Steps {
+		if !b.Cells[index[step.Placed]].Obstacle {
+			t.Errorf("%s: step %d placed %v, which has no obstacle on the final board", name, i, step.Placed)
+		}
+		total, chosen := 0.0, false
+		for _, c := range step.Candidates {
+			if len(c.Values) != len(trace.Metrics) {
+				t.Fatalf("%s: step %d candidate %v has %d values for %d metrics", name, i, c.Hex, len(c.Values), len(trace.Metrics))
+			}
+			if placed[c.Hex] {
+				t.Errorf("%s: step %d offers %v, which already has an obstacle", name, i, c.Hex)
+			}
+			total += c.Values[chance]
+			chosen = chosen || c.Hex == step.Placed
+		}
+		if !chosen {
+			t.Errorf("%s: step %d placed %v, which wasn't a candidate", name, i, step.Placed)
+		}
+		if math.Abs(total-1) > 1e-9 {
+			t.Errorf("%s: step %d chances add up to %v, want 1", name, i, total)
+		}
+		placed[step.Placed] = true
+	}
+	if len(placed) != countObstacles(b) {
+		t.Errorf("%s: trace placed %d distinct cells, but the board has %d obstacles", name, len(placed), countObstacles(b))
+	}
+}
+
+func TestTraces(t *testing.T) {
+	b := board.NewHexagon(5)
+	checkTrace(t, "uniform", b, Uniform(b, 20, newRNG(1)))
+
+	for _, weighted := range []bool{true, false} {
+		cfg := defaultScoredConfig(t)
+		cfg.Weighted = weighted
+		cfg.MaxBank = 2
+		b := board.NewHexagon(5)
+		checkTrace(t, fmt.Sprintf("scored, weighted=%v", weighted), b, Scored(b, cfg, newRNG(1)))
 	}
 }

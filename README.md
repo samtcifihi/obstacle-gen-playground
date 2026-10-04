@@ -12,6 +12,13 @@ Each generation uses a seed, shown above the board. Click "reuse" (or type a
 seed) to keep it fixed while you tweak parameters; leave the seed box empty for
 a new random board each time.
 
+Use the slider, the arrow buttons or the ← → keys to step through the
+placements, from the empty board to the final one. Each step shows the board
+before an obstacle is placed, with a heatmap of the choice (score, chance of
+being chosen, and so on) and the cell that was chosen outlined. Hover over a
+cell to see all its values. The heatmap's colours run from the step's lowest
+value to its highest. Changing a parameter keeps you on the same step.
+
 ## Algorithms
 
 ### Uniform random
@@ -53,10 +60,11 @@ With `f_a'` the inverse of `f_a`, this is a generalised mean: the defaults
 (`2 root`, `mean`, `2 ^`) give the power mean with exponent ½.
 
 **Visibility** is the furthest distance from the board's centre cell to the
-edge of an empty board: the most steps it takes to walk off the board from the
-centre in a straight line. On a hexagon that's its edge length, so 5 here: the
-centre cell plus 4 more cells before the rim. Since the centre has 4 empty cells
-between it and the edge, its step 4 term on an empty board is 4/5.
+edge of an empty board, counted in the cells between them, the same way steps 3
+and 4 count (a cell next to an obstacle or the edge is at distance 0). On a
+hexagon that's its edge length minus 1, so 4 here. On an empty board the centre
+therefore scores 1 for both distance terms. Step 4 counts aren't capped, so
+cells near a corner can score more than 1 in some directions (up to 8/4 here).
 
 ## Running
 
@@ -88,9 +96,22 @@ generated board. Parameters that are left out take their defaults.
   "board": {
     "edgeLength": 5,
     "cells": [{ "q": 0, "r": -4, "obstacle": false }, ...]
+  },
+  "trace": {
+    "metrics": [{ "name": "score", "description": "Score (steps 1–5)" }, ...],
+    "steps": [
+      {
+        "placed": { "q": 1, "r": -2 },
+        "candidates": [{ "q": 0, "r": -4, "values": [1.23, ...] }, ...]
+      },
+      ...
+    ]
   }
 }
 ```
+
+The trace has one step per obstacle, in order. Each step lists the cells that
+could have been chosen, with one value per metric.
 
 Cells use [axial coordinates](https://www.redblobgames.com/grids/hexagons/#coordinates-axial).
 The seed is a string because it can exceed JavaScript's safe integer range.

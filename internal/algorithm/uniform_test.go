@@ -36,7 +36,7 @@ func TestUniformPlacesN(t *testing.T) {
 	}
 	for _, tt := range tests {
 		b := board.NewHexagon(5)
-		placed := Uniform(b, tt.n, newRNG(1))
+		placed := len(Uniform(b, tt.n, newRNG(1)).Steps)
 		if placed != tt.want {
 			t.Errorf("Uniform(n=%d) returned %d, want %d", tt.n, placed, tt.want)
 		}
@@ -54,7 +54,7 @@ func TestUniformOnlyUsesEmptyCells(t *testing.T) {
 	}
 	before := countObstacles(b)
 
-	placed := Uniform(b, total, newRNG(1))
+	placed := len(Uniform(b, total, newRNG(1)).Steps)
 	if placed != total-before {
 		t.Errorf("placed %d obstacles, want %d (the number of empty cells)", placed, total-before)
 	}

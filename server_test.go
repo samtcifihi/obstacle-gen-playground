@@ -67,6 +67,9 @@ func TestGenerateScored(t *testing.T) {
 	if got := countObstacles(resp.Board); got != 12 {
 		t.Errorf("board has %d obstacles, want 12", got)
 	}
+	if len(resp.Trace.Steps) != 12 || len(resp.Trace.Metrics) == 0 {
+		t.Errorf("trace has %d steps and %d metrics, want 12 steps and some metrics", len(resp.Trace.Steps), len(resp.Trace.Metrics))
+	}
 
 	// With no parameters, it uses the defaults.
 	if resp := generate(t, "algorithm=scored"); resp.Placed != 16 {

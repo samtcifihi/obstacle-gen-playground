@@ -21,9 +21,10 @@ const boardEdgeLength = 5
 var webFS embed.FS
 
 type generateResponse struct {
-	Seed   uint64       `json:"seed,string"`
-	Placed int          `json:"placed"`
-	Board  *board.Board `json:"board"`
+	Seed   uint64          `json:"seed,string"`
+	Placed int             `json:"placed"`
+	Board  *board.Board    `json:"board"`
+	Trace  algorithm.Trace `json:"trace"`
 }
 
 func newHandler() http.Handler {
@@ -78,8 +79,8 @@ func handleGenerate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	b := board.NewHexagon(boardEdgeLength)
-	placed := alg.Run(b, params, rand.New(rand.NewPCG(seed, 0)))
-	writeJSON(w, generateResponse{Seed: seed, Placed: placed, Board: b})
+	trace := alg.Run(b, params, rand.New(rand.NewPCG(seed, 0)))
+	writeJSON(w, generateResponse{Seed: seed, Placed: len(trace.Steps), Board: b, Trace: trace})
 }
 
 func writeJSON(w http.ResponseWriter, v any) {
