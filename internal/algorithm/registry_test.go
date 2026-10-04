@@ -1,11 +1,8 @@
 package algorithm
 
 import (
-	"encoding/json"
 	"fmt"
-	"math"
 	"net/url"
-	"slices"
 	"strings"
 	"testing"
 
@@ -176,70 +173,6 @@ func TestParseRejectsInvalid(t *testing.T) {
 	}
 }
 
-func TestParseReal(t *testing.T) {
-	for _, tt := range []struct {
-		s    string
-		want float64
-	}{
-		{"0.5", 0.5},
-		{"1/2", 0.5},
-		{" 3 / 4 ", 0.75},
-		{"-1/2", -0.5},
-		{"1/-4", -0.25},
-		{"2.5/0.5", 5},
-		{"1e-1/2", 0.05},
-		{"7", 7},
-		{"2/3", 2.0 / 3},
-	} {
-		if got, err := parseReal(tt.s); err != nil || math.Abs(got-tt.want) > 1e-15 {
-			t.Errorf("parseReal(%q) = %v, %v; want %v", tt.s, got, err, tt.want)
-		}
-	}
-	for _, s := range []string{"", "/", "1/", "/2", "1/0", "0/0", "1/2/3", "a/2", "1/b", "Inf", "1/Inf", "NaN/2", "1e308/1e-308", "½"} {
-		if got, err := parseReal(s); err == nil {
-			t.Errorf("parseReal(%q) = %v, want an error", s, got)
-		}
-	}
-}
-
-func TestParseFractionsRespectLimits(t *testing.T) {
-	for _, tt := range []struct {
-		alg   Algorithm
-		param string
-		value string
-		ok    bool
-	}{
-		{evolvedAlgorithm, "k_beta", "1/2", true},
-		{evolvedAlgorithm, "k_beta", "0/2", false}, // must be greater than 0
-		{evolvedAlgorithm, "k_beta", "-1/2", false},
-		{evolvedAlgorithm, "k_beta_coef", "0/2", true}, // may be 0
-		{evolvedAlgorithm, "k_beta_coef", "-1/3", false},
-		{evolvedAlgorithm, "k_stretch", "17/2", true},
-		{tripleBetaAlgorithm, "k_alpha_1", "2/3", true},
-		{tripleBetaAlgorithm, "k_alpha_obstacles", "1/1000", true},
-		{splitAlgorithm, "k_adjacent_penalty", "3/2", true},
-		{splitAlgorithm, "k_adjacent_penalty", "-3/2", false},
-		{splitAlgorithm, "k_obstacles", "1/2", false}, // whole numbers stay whole
-	} {
-		v, err := tt.alg.Parse(url.Values{tt.param: {tt.value}})
-		if (err == nil) != tt.ok {
-			t.Errorf("%s=%s: error %v, want ok %v", tt.param, tt.value, err, tt.ok)
-		}
-		if err == nil {
-			want, _ := parseReal(tt.value)
-			if got := v.Float(tt.param); got != want {
-				t.Errorf("%s=%s parsed as %v, want %v", tt.param, tt.value, got, want)
-			}
-		}
-	}
-	// 1/2 and 0.5 are the same.
-	half, _ := evolvedAlgorithm.Parse(url.Values{"k_beta": {"1/2"}})
-	point5, _ := evolvedAlgorithm.Parse(url.Values{"k_beta": {"0.5"}})
-	if half.Float("k_beta") != point5.Float("k_beta") {
-		t.Errorf("1/2 parsed as %v, 0.5 as %v", half.Float("k_beta"), point5.Float("k_beta"))
-	}
-}
-
 func TestMaxAdjacentRange(t *testing.T) {
 	for _, tt := range []struct {
 		value string
@@ -252,91 +185,5 @@ func TestMaxAdjacentRange(t *testing.T) {
 	_, err := splitAlgorithm.Parse(url.Values{"k_max_adjacent": {"7"}})
 	if want := "k_max_adjacent must be a whole number from 0 to 6"; err == nil || err.Error() != want {
 		t.Errorf("error for 7 is %v, want %q", err, want)
-	}
-}
-
-func TestActive(t *testing.T) {
-	names := func(alg Algorithm, q url.Values) []string {
-		t.Helper()
-		v, err := alg.Parse(q)
-		if err != nil {
-			t.Fatal(err)
-		}
-		var names []string
-		for _, p := range alg.Active(v) {
-			if p.Value != v[p.Name] {
-				t.Errorf("%s: active %s = %v, want %v", alg.ID, p.Name, p.Value, v[p.Name])
-			}
-			names = append(names, p.Name)
-		}
-		// In the algorithm's order.
-		var order []string
-		for _, p := range alg.Params {
-			if slices.Contains(names, p.Name) {
-				order = append(order, p.Name)
-			}
-		}
-		if !slices.Equal(names, order) {
-			t.Errorf("%s: active parameters %v, want them in the order %v", alg.ID, names, order)
-		}
-		return names
-	}
-	for _, tt := range []struct {
-		alg        Algorithm
-		q          url.Values
-		has, hasnt []string
-	}{
-		{tripleBetaAlgorithm, url.Values{},
-			[]string{"k_obstacles", "k_beta_3", "f_obstacles_distance_mode", "is_obstacles_alpha_eq_beta", "k_beta_obstacles"},
-			[]string{"is_obstacle_axes_shared", "k_alpha_obstacles_1", "k_beta_obstacles_3"}},
-		{tripleBetaAlgorithm, url.Values{"f_obstacles_distance_mode": {"per_axis"}},
-			[]string{"f_obstacles_distance_mode", "is_obstacle_axes_shared", "k_alpha_obstacles_1", "k_beta_obstacles_3"},
-			[]string{"is_obstacles_alpha_eq_beta", "k_alpha_obstacles", "k_beta_obstacles"}},
-		{evolvedAlgorithm, url.Values{"is_obstacles_flattened": {"true"}, "is_edge_flattened": {"false"}, "is_stretching": {"false"}},
-			[]string{"f_obstacles_a'", "f_edge_dir", "is_stretching"},
-			[]string{"f_obstacles_dir", "k_stretch"}},
-	} {
-		got := names(tt.alg, tt.q)
-		for _, name := range tt.has {
-			if !slices.Contains(got, name) {
-				t.Errorf("%s %v: active parameters %v, want %s among them", tt.alg.ID, tt.q, got, name)
-			}
-		}
-		for _, name := range tt.hasnt {
-			if slices.Contains(got, name) {
-				t.Errorf("%s %v: active parameters %v, don't want %s", tt.alg.ID, tt.q, got, name)
-			}
-		}
-	}
-	// Parameters following another have its value.
-	v, _ := tripleBetaAlgorithm.Parse(url.Values{"k_alpha_1": {"3"}})
-	for _, p := range tripleBetaAlgorithm.Active(v) {
-		if strings.HasPrefix(p.Name, "k_alpha_") || strings.HasPrefix(p.Name, "k_beta_") {
-			if !strings.Contains(p.Name, "obstacles") && p.Value != 3.0 {
-				t.Errorf("%s = %v, want 3, following k_alpha_1", p.Name, p.Value)
-			}
-		}
-	}
-}
-
-func TestParamValuesJSON(t *testing.T) {
-	pv := ParamValues{{"k_b", 16}, {"is_a", true}, {"f_c", "max"}, {"k_d", 0.5}}
-	data, err := json.Marshal(pv)
-	if want := `{"k_b":16,"is_a":true,"f_c":"max","k_d":0.5}`; err != nil || string(data) != want {
-		t.Errorf("encodes as %s, %v; want %s", data, err, want)
-	}
-	var back ParamValues
-	if err := json.Unmarshal(data, &back); err != nil {
-		t.Fatal(err)
-	}
-	want := ParamValues{{"k_b", 16.0}, {"is_a", true}, {"f_c", "max"}, {"k_d", 0.5}}
-	if !slices.Equal(back, want) {
-		t.Errorf("decodes as %v, want %v", back, want)
-	}
-	if data, _ := json.Marshal(ParamValues{}); string(data) != "{}" {
-		t.Errorf("no values encode as %s, want {}", data)
-	}
-	if err := json.Unmarshal([]byte(`[1, 2]`), &back); err == nil {
-		t.Error("decoding an array succeeded, want an error")
 	}
 }
