@@ -325,18 +325,18 @@ func TestTripleBetaDistanceShapes(t *testing.T) {
 	}
 }
 
-func TestParseObstaclesSymmetric(t *testing.T) {
+func TestParseObstaclesAlphaEqBeta(t *testing.T) {
 	a, _ := Lookup("triple_beta")
 	for _, tt := range []struct {
-		symmetric string
-		want      float64
+		alphaEqBeta string
+		want        float64
 	}{{"false", 4}, {"true", 2}} {
-		v, err := a.Parse(url.Values{"is_obstacles_symmetric": {tt.symmetric}, "k_alpha_obstacles": {"2"}, "k_beta_obstacles": {"4"}})
+		v, err := a.Parse(url.Values{"is_obstacles_alpha_eq_beta": {tt.alphaEqBeta}, "k_alpha_obstacles": {"2"}, "k_beta_obstacles": {"4"}})
 		if err != nil {
 			t.Fatal(err)
 		}
 		if got := v.Float("k_beta_obstacles"); got != tt.want {
-			t.Errorf("is_obstacles_symmetric=%s: k_beta_obstacles = %v, want %v", tt.symmetric, got, tt.want)
+			t.Errorf("is_obstacles_alpha_eq_beta=%s: k_beta_obstacles = %v, want %v", tt.alphaEqBeta, got, tt.want)
 		}
 	}
 }
@@ -374,7 +374,7 @@ func TestTripleBetaAggregateUnchanged(t *testing.T) {
 	a, _ := Lookup("triple_beta")
 	q := url.Values{
 		"k_alpha_obstacles": {"3"}, "k_beta_obstacles": {"1.5"},
-		"is_symmetric": {"false"}, "is_axes_shared": {"false"},
+		"is_alpha_eq_beta": {"false"}, "is_axes_shared": {"false"},
 		"k_alpha_1": {"2"}, "k_beta_1": {"5"}, "k_alpha_2": {"3"}, "k_beta_2": {"3"}, "k_alpha_3": {"0.7"}, "k_beta_3": {"1.2"},
 	}
 	for _, mode := range []string{"", "aggregate"} {
@@ -699,22 +699,22 @@ func TestParseObstacleAxesFollow(t *testing.T) {
 		q.Set(fmt.Sprintf("k_%s_obstacles_%d", [2]string{"alpha", "beta"}[i%2], i/2+1), fmt.Sprint(i+1))
 	}
 	for _, tt := range []struct {
-		symmetric, shared string
-		want              [3]BetaShape
+		alphaEqBeta, shared string
+		want                [3]BetaShape
 	}{
 		{"false", "false", [3]BetaShape{{1, 2}, {3, 4}, {5, 6}}},
 		{"true", "false", [3]BetaShape{{1, 1}, {3, 3}, {5, 5}}},
 		{"false", "true", [3]BetaShape{{1, 2}, {1, 2}, {1, 2}}},
 		{"true", "true", [3]BetaShape{{1, 1}, {1, 1}, {1, 1}}},
 	} {
-		q.Set("is_obstacle_axes_symmetric", tt.symmetric)
+		q.Set("is_obstacle_axes_alpha_eq_beta", tt.alphaEqBeta)
 		q.Set("is_obstacle_axes_shared", tt.shared)
 		v, err := a.Parse(q)
 		if err != nil {
 			t.Fatal(err)
 		}
 		if got := tripleBetaConfig(v).AxisDistances; got != tt.want {
-			t.Errorf("is_obstacle_axes_symmetric=%s, is_obstacle_axes_shared=%s: shapes %v, want %v", tt.symmetric, tt.shared, got, tt.want)
+			t.Errorf("is_obstacle_axes_alpha_eq_beta=%s, is_obstacle_axes_shared=%s: shapes %v, want %v", tt.alphaEqBeta, tt.shared, got, tt.want)
 		}
 	}
 }

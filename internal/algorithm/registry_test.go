@@ -94,18 +94,18 @@ func TestParseFollows(t *testing.T) {
 		"k_alpha_3": {"5"}, "k_beta_3": {"6"},
 	}
 	for _, tt := range []struct {
-		symmetric, shared string
-		want              [6]float64
+		alphaEqBeta, shared string
+		want                [6]float64
 	}{
 		{"false", "false", [6]float64{1, 2, 3, 4, 5, 6}},
 		{"true", "false", [6]float64{1, 1, 3, 3, 5, 5}},
 		{"false", "true", [6]float64{1, 2, 1, 2, 1, 2}},
 		{"true", "true", [6]float64{1, 1, 1, 1, 1, 1}},
 	} {
-		q.Set("is_symmetric", tt.symmetric)
+		q.Set("is_alpha_eq_beta", tt.alphaEqBeta)
 		q.Set("is_axes_shared", tt.shared)
 		if got := shapes(parse(q)); got != tt.want {
-			t.Errorf("is_symmetric=%s, is_axes_shared=%s: α, β = %v, want %v", tt.symmetric, tt.shared, got, tt.want)
+			t.Errorf("is_alpha_eq_beta=%s, is_axes_shared=%s: α, β = %v, want %v", tt.alphaEqBeta, tt.shared, got, tt.want)
 		}
 	}
 }

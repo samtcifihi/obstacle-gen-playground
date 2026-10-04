@@ -23,7 +23,7 @@ var tripleBetaAlgorithm = Algorithm{
 				Description: "The number of obstacles to place (if possible)"},
 			{Name: "k_max_bank", Group: "General", Type: Int, Default: 0,
 				Description: "Maximum contiguous group of obstacles allowed (0 = no limit)"},
-			{Name: "is_symmetric", Group: "Distributions", Type: Bool, Default: true,
+			{Name: "is_alpha_eq_beta", Group: "Distributions", Type: Bool, Default: true,
 				Description: "Force α = β for each axis's distribution, so each is symmetric about the centre"},
 			{Name: "is_axes_shared", Group: "Distributions", Type: Bool, Default: true,
 				Description: "Force all 3 distributions to use axis 1's α and β"},
@@ -36,17 +36,17 @@ var tripleBetaAlgorithm = Algorithm{
 				Options: []Option{{Value: "aggregate", Label: "aggregate"}, {Value: "per_axis", Label: "per_axis"}},
 				Description: "aggregate weights a hex by its hex distance to the nearest obstacle; per_axis weights it by " +
 					"how far its q, r and s each are from that obstacle's"},
-			{Name: "is_obstacles_symmetric", Group: "Distance to obstacles", Type: Bool, Default: false, OnlyIf: aggregateMode,
+			{Name: "is_obstacles_alpha_eq_beta", Group: "Distance to obstacles", Type: Bool, Default: false, OnlyIf: aggregateMode,
 				Description: "Force α = β for the distance distribution"},
 			{Name: "k_alpha_obstacles", Group: "Distance to obstacles", Type: Float, Default: 1.0, MinExclusive: true,
 				OnlyIf: aggregateMode,
 				Description: "α of the beta distribution over distance to the nearest obstacle: raising it favours " +
 					"being far from obstacles, spreading them out"},
 			{Name: "k_beta_obstacles", Group: "Distance to obstacles", Type: Float, Default: 1.0, MinExclusive: true,
-				OnlyIf: aggregateMode, Follows: []Follow{{When: "is_obstacles_symmetric", Param: "k_alpha_obstacles"}},
+				OnlyIf: aggregateMode, Follows: []Follow{{When: "is_obstacles_alpha_eq_beta", Param: "k_alpha_obstacles"}},
 				Description: "β of the beta distribution over distance to the nearest obstacle: raising it favours " +
 					"being close to obstacles, clustering them"},
-			{Name: "is_obstacle_axes_symmetric", Group: "Distance to obstacles", Type: Bool, Default: false,
+			{Name: "is_obstacle_axes_alpha_eq_beta", Group: "Distance to obstacles", Type: Bool, Default: false,
 				OnlyIf: perAxisMode, Description: "Force α = β for each axis's distance distribution"},
 			{Name: "is_obstacle_axes_shared", Group: "Distance to obstacles", Type: Bool, Default: true,
 				OnlyIf: perAxisMode, Description: "Force all 3 distance distributions to use axis 1's α and β"},
@@ -72,7 +72,7 @@ const (
 func axisParams(axis int, coord, from, to string) []Param {
 	alpha, beta := fmt.Sprintf("k_alpha_%d", axis), fmt.Sprintf("k_beta_%d", axis)
 	group := fmt.Sprintf("Axis %d (%s): %s to %s", axis, coord, from, to)
-	alphaFollows, betaFollows := tiedFollows("k_alpha_%d", "k_beta_%d", axis, "is_axes_shared", "is_symmetric")
+	alphaFollows, betaFollows := tiedFollows("k_alpha_%d", "k_beta_%d", axis, "is_axes_shared", "is_alpha_eq_beta")
 	return []Param{
 		{Name: alpha, Group: group, Type: Float, Default: 1.0, MinExclusive: true, Follows: alphaFollows,
 			Description: fmt.Sprintf("α of the beta distribution over %s: raising it favours the %s", coord, to)},
@@ -88,7 +88,7 @@ func obstacleAxisParams(axis int, coord string) []Param {
 	alpha, beta := fmt.Sprintf("k_alpha_obstacles_%d", axis), fmt.Sprintf("k_beta_obstacles_%d", axis)
 	group := fmt.Sprintf("Obstacle distance axis %d (%s)", axis, coord)
 	alphaFollows, betaFollows := tiedFollows("k_alpha_obstacles_%d", "k_beta_obstacles_%d", axis,
-		"is_obstacle_axes_shared", "is_obstacle_axes_symmetric")
+		"is_obstacle_axes_shared", "is_obstacle_axes_alpha_eq_beta")
 	return []Param{
 		{Name: alpha, Group: group, Type: Float, Default: 1.0, MinExclusive: true, OnlyIf: perAxisMode,
 			Follows: alphaFollows,
@@ -103,14 +103,14 @@ func obstacleAxisParams(axis int, coord string) []Param {
 
 // tiedFollows returns the Follows for the α and β parameters of axis,
 // whose names are alpha and beta formatted with the axis number. While
-// shared holds, axes 2 and 3 follow axis 1; while symmetric holds, β
+// shared holds, axes 2 and 3 follow axis 1; while alphaEqBeta holds, β
 // follows α. With both, all six follow axis 1's α.
-func tiedFollows(alpha, beta string, axis int, shared, symmetric string) (alphaFollows, betaFollows []Follow) {
+func tiedFollows(alpha, beta string, axis int, shared, alphaEqBeta string) (alphaFollows, betaFollows []Follow) {
 	if axis > 1 {
 		alphaFollows = []Follow{{When: shared, Param: fmt.Sprintf(alpha, 1)}}
 		betaFollows = []Follow{{When: shared, Param: fmt.Sprintf(beta, 1)}}
 	}
-	betaFollows = append(betaFollows, Follow{When: symmetric, Param: fmt.Sprintf(alpha, axis)})
+	betaFollows = append(betaFollows, Follow{When: alphaEqBeta, Param: fmt.Sprintf(alpha, axis)})
 	return alphaFollows, betaFollows
 }
 

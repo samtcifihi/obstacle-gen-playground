@@ -116,9 +116,9 @@ distribution sets how much each band of one family is favoured:
 Beta(1, 1) is flat, so the default (all three flat) is exactly uniform.
 Symmetric shapes like Beta(2, 2) favour the middle, and asymmetric ones like
 Beta(2, 5) favour one side. The same symmetric shape on every axis gives sixfold
-symmetry. `is_symmetric` forces α = β for each axis, and `is_axes_shared` makes
-axes 2 and 3 use axis 1's α and β. Forced values show locked, the same way as
-Evolved's `f_a'`.
+symmetry. `is_alpha_eq_beta` forces α = β for each axis, and `is_axes_shared`
+makes axes 2 and 3 use axis 1's α and β. Forced values show locked, the same
+way as Evolved's `f_a'`.
 
 **Distance to obstacles.** The distance weight sets how new obstacles relate
 to existing ones. `f_obstacles_distance_mode` picks how it's measured:
@@ -148,7 +148,7 @@ On an edge-length-5 board (61 hexes), with 16 obstacles and flat positions,
 Beta(1, 1) leaves about 10 pairs of adjacent obstacles per board, Beta(6, 1)
 about 1 and Beta(1, 6) about 15. With that many obstacles, most distances are 0
 to 2, low on that board's 0 to 7 scale, so clustering shapes need a larger β to
-pull hard. `is_obstacles_symmetric` (off by default) forces α = β.
+pull hard. `is_obstacles_alpha_eq_beta` (off by default) forces α = β.
 
 *Per axis.* Three more beta distributions, one for each cube coordinate, weigh
 the shape of the gap between a hex and its nearest obstacle. Each round, each
@@ -183,7 +183,7 @@ with neutral shapes), while r Beta(1, 10) raises them to about 21. For
 example, q Beta(5, 1), r Beta(1, 5) and s Beta(1, 1) favour placing an
 obstacle in its nearest neighbour's r band but well apart in q: spaced rows.
 
-`is_obstacle_axes_symmetric` forces α = β for each axis, and
+`is_obstacle_axes_alpha_eq_beta` forces α = β for each axis, and
 `is_obstacle_axes_shared` (on by default) makes axes 2 and 3 use axis 1's α
 and β, the same way as the position distributions' controls. With no
 obstacles yet the term is left out: every axis weight is 1, and the heatmap

@@ -160,7 +160,7 @@ func TestGenerateRejectsBadParams(t *testing.T) {
 		"algorithm=evolved&k_beta=0",
 		"algorithm=uniform&k_max_bank=-1",
 		"algorithm=evolved&f_edge_b=mode",
-		"algorithm=triple_beta&is_symmetric=false&k_beta_1=0",
+		"algorithm=triple_beta&is_alpha_eq_beta=false&k_beta_1=0",
 	} {
 		if rec := get(t, "/api/generate?"+query); rec.Code != http.StatusBadRequest {
 			t.Errorf("GET /api/generate?%s: status %d, want %d", query, rec.Code, http.StatusBadRequest)
