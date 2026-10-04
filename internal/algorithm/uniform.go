@@ -13,7 +13,7 @@ var uniformAlgorithm = Algorithm{
 	Description: "Places obstacles one at a time, each on a free hex (no obstacle, and not making a bank too big) " +
 		"chosen with equal probability.",
 	Params: []Param{
-		{Name: "k_obstacles", Type: Int, Default: 10,
+		{Name: "k_obstacles", Type: Int, Default: 16,
 			Description: "The number of obstacles to place (if possible)"},
 		{Name: "k_max_bank", Type: Int, Default: 0,
 			Description: "Maximum contiguous group of obstacles allowed (0 = no limit)"},

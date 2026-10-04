@@ -96,7 +96,7 @@ func handleGenerate(w http.ResponseWriter, r *http.Request) {
 
 	b := board.NewHexagon(edge)
 	trace := alg.Run(b, params, rand.New(rand.NewPCG(seed, 0)))
-	writeJSON(w, generateResponse{Seed: seed, Placed: len(trace.Steps), Board: b, Trace: trace})
+	writeJSON(w, generateResponse{Seed: seed, Placed: trace.Placed(), Board: b, Trace: trace})
 }
 
 func writeJSON(w http.ResponseWriter, v any) {

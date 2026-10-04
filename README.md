@@ -24,7 +24,7 @@ value to its highest. Changing a parameter keeps you on the same step.
 
 ### Uniform
 
-Places `k_obstacles` obstacles one at a time, each on a free hex (no obstacle,
+Places `k_obstacles` (default 16) obstacles one at a time, each on a free hex (no obstacle,
 and not making a bank bigger than `k_max_bank`, where 0 means no limit) chosen
 with equal probability. It stops early if no hex is free, so with no bank limit
 and `k_obstacles` at least the number of hexes, the board ends up full.
@@ -147,6 +147,47 @@ thousands, whose density rounds down to 0), every hex keeps a finite, non-zero
 weight: with Beta(2, 2) on every axis, perimeter hexes are unlikely but
 possible.
 
+### Split
+
+A greedy line-breaker, based on an existing Java generator. Each round it looks
+at every placement: one empty hex, or with `is_symmetric` (on by default) a
+hex and its 180° rotation about the centre, placed together.
+
+**Eligibility.** A placement is skipped if, once its obstacles are added:
+
+- any of its hexes has fewer than `k_edge_margin` cells between it and the edge
+  (0 allows the perimeter, 1 is the original, 2 keeps another ring clear);
+- any of its hexes touches more than `k_max_adjacent` obstacles (0 means none
+  may touch, 1 is the original, 6 is no limit). Unlike `k_max_bank`, which caps
+  a bank's size, this limits local shape: long chains are fine, but not a hex
+  touching two obstacles;
+- a bank would be bigger than `k_max_bank` (0 = no limit).
+
+**Score.** For each axis, `sᵢ` is the shorter of the clear runs either way
+along it (empty cells before an obstacle or the edge), so a hex scores well when
+it splits a long clear line evenly. Then:
+
+```text
+split = f_split_axes(s₁, s₂, s₃)           max is the original
+raw   = split − k_adjacent_penalty × (obstacles touched) + U{0, …, k_noise}
+score = ⌊raw / k_score_bucket⌋
+```
+
+The obstacle goes on a random placement among those with the top score.
+`f_split_axes` takes the same choices as Evolved: `max` is happy with one good
+line-break, `mean` rewards being useful along several axes, `median` wants at
+least two good axes, and `min` wants every axis broken up. `k_score_bucket`
+sets how picky it is: 1 makes every point count, 2 is the original, and larger
+buckets make more hexes tie, so more is left to chance. The defaults reproduce
+the original, apart from rounding down negative raw scores where Java's
+integer division rounds towards 0.
+
+**Symmetry.** With `is_symmetric`, each step places a pair, both scored the
+same, as the board stays symmetric. The centre is its own pair of one, so it's
+only eligible while an odd number of obstacles are left to place. An odd count
+takes the centre first, if it's eligible, and an even count never uses it, so
+the count comes out exact whenever there's room.
+
 ## Running
 
 Requires [Go](https://go.dev/) 1.22+ and [just](https://github.com/casey/just).
@@ -192,9 +233,11 @@ Parameters that are left out take their defaults.
 }
 ```
 
-The trace has one step per obstacle, in order. Each step lists the cells that
-could have been chosen, with one value per metric. If the algorithm stopped
-early, `trace.note` says why.
+The trace has one step per choice, in order. Most steps place one obstacle at
+`placed`; Split with `is_symmetric` also lists the mirrored one in `also`. Each
+step lists the cells that could have been chosen, with one value per metric. If
+the algorithm stopped early, `trace.note` says why. `placed` at the top level
+counts obstacles, not steps.
 
 Cells use [axial coordinates](https://www.redblobgames.com/grids/hexagons/#coordinates-axial).
 The seed is a string because it can exceed JavaScript's safe integer range.

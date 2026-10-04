@@ -36,7 +36,7 @@ const panels = new Map();
 const view = {
   data: null,
   hexes: new Map(), // "q,r" → polygon
-  marker: null, // outline around the next obstacle
+  markers: null, // outlines around the next obstacles
   frame: 0,
   metric: null, // name of the metric the heatmap shows
   hovered: null, // "q,r" of the cell under the pointer
@@ -102,8 +102,8 @@ function drawBoard(board) {
   if (!view.hexes.has(view.hovered)) {
     view.hovered = null; // the board shrank
   }
-  view.marker = svgEl("polygon", { class: "next-marker" });
-  svg.replaceChildren(svgEl("defs", {}, hatch), ...polygons, view.marker);
+  view.markers = svgEl("g");
+  svg.replaceChildren(svgEl("defs", {}, hatch), ...polygons, view.markers);
 
   // Pad by half a hex's width/height plus room for the outline.
   const padX = (HEX_SIZE * SQRT3) / 2 + 3;
@@ -140,24 +140,39 @@ function formatValue(metric, value) {
   return value !== 0 && Math.abs(value) < 0.001 ? value.toExponential(2) : value.toFixed(3);
 }
 
+// stepHexes returns the hexes a step put obstacles on: usually one, but
+// some algorithms place a few at once.
+const stepHexes = (step) => [step.placed, ...(step.also ?? [])];
+
 // frameState works out what each cell is at the current frame.
 function frameState() {
   const { board, trace } = view.data;
   const steps = trace.steps;
-  const order = new Map(steps.map((s, i) => [hexKey(s.placed), i]));
+  const stepOf = new Map(); // "q,r" → index of the step that placed it
+  const number = new Map(); // "q,r" → which obstacle it was, from 1
+  let before = 0; // obstacles placed before this frame
+  steps.forEach((s, i) => {
+    for (const h of stepHexes(s)) {
+      stepOf.set(hexKey(h), i);
+      number.set(hexKey(h), number.size + 1);
+    }
+    if (i < view.frame) {
+      before += stepHexes(s).length;
+    }
+  });
   // Obstacles placed at or after this frame aren't on the board yet.
   const obstacles = new Set(
-    board.cells.filter((c) => c.obstacle && !(order.get(hexKey(c)) >= view.frame)).map(hexKey),
+    board.cells.filter((c) => c.obstacle && !(stepOf.get(hexKey(c)) >= view.frame)).map(hexKey),
   );
   const step = steps[view.frame];
   const candidates = new Map(step ? step.candidates.map((c) => [hexKey(c), c.values]) : []);
-  return { order, obstacles, step, candidates };
+  return { number, before, obstacles, step, candidates };
 }
 
 function showFrame() {
   const { trace } = view.data;
-  const total = trace.steps.length;
-  const { obstacles, step, candidates } = frameState();
+  const total = view.data.placed;
+  const { before, obstacles, step, candidates } = frameState();
   const metricIndex = trace.metrics.findIndex((m) => m.name === view.metric);
   const metric = trace.metrics[metricIndex];
 
@@ -178,15 +193,19 @@ function showFrame() {
     polygon.style.fill = values ? heatColor(hi > lo ? (values[metricIndex] - lo) / (hi - lo) : 0.5) : "";
   }
 
-  view.marker.style.display = step ? "" : "none";
-  if (step) {
-    view.marker.setAttribute("points", hexCorners(hexCenter(step.placed), HEX_SIZE - 2));
-  }
+  view.markers.replaceChildren(
+    ...(step ? stepHexes(step) : []).map((h) =>
+      svgEl("polygon", { class: "next-marker", points: hexCorners(hexCenter(h), HEX_SIZE - 2) }),
+    ),
+  );
 
-  frameInput.max = total;
+  frameInput.max = trace.steps.length;
   frameInput.value = view.frame;
   if (step) {
-    frameLabel.textContent = `Choosing obstacle ${view.frame + 1} of ${total}`;
+    const n = stepHexes(step).length;
+    frameLabel.textContent = n === 1
+      ? `Choosing obstacle ${before + 1} of ${total}`
+      : `Choosing obstacles ${before + 1}–${before + n} of ${total}`;
   } else {
     const note = trace.note ? ` · ${trace.note}` : "";
     frameLabel.textContent = `Final board · ${total} obstacle${total === 1 ? "" : "s"}${note}`;
@@ -235,11 +254,11 @@ function showLegend(heat) {
 
 function describeCell(key) {
   const { trace } = view.data;
-  const { order, obstacles, step, candidates } = frameState();
+  const { number, obstacles, step, candidates } = frameState();
   const [q, r] = key.split(",");
   const where = `q ${q}, r ${r}`;
   if (obstacles.has(key)) {
-    return order.has(key) ? `${where} · obstacle ${order.get(key) + 1}` : `${where} · obstacle`;
+    return number.has(key) ? `${where} · obstacle ${number.get(key)}` : `${where} · obstacle`;
   }
   if (!step) {
     return `${where} · empty`;
@@ -249,7 +268,7 @@ function describeCell(key) {
     return `${where} · can't be chosen`;
   }
   const parts = trace.metrics.map((m, i) => `${m.name} ${formatValue(m, values[i])}`);
-  const chosen = key === hexKey(step.placed) ? " · chosen" : "";
+  const chosen = stepHexes(step).some((h) => hexKey(h) === key) ? " · chosen" : "";
   return `${where}${chosen} · ${parts.join(" · ")}`;
 }
 

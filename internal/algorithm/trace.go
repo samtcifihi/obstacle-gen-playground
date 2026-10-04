@@ -7,7 +7,8 @@ import "github.com/samtcifihi/obstacle-gen-playground/internal/board"
 type Trace struct {
 	// Metrics describes the values recorded for each candidate cell.
 	Metrics []Metric `json:"metrics"`
-	// Steps has one entry per obstacle placed, in order.
+	// Steps has one entry per choice of where to place obstacles, in order.
+	// Most algorithms place one obstacle per step.
 	Steps []Step `json:"steps"`
 	// Note says why the algorithm stopped early, if it did.
 	Note string `json:"note,omitempty"`
@@ -23,9 +24,21 @@ type Metric struct {
 	Integer bool `json:"integer,omitempty"`
 }
 
-// Step records the placement of one obstacle.
+// Placed returns the number of obstacles placed.
+func (t Trace) Placed() int {
+	n := 0
+	for _, s := range t.Steps {
+		n += 1 + len(s.Also)
+	}
+	return n
+}
+
+// Step records the placement of one obstacle, or a few at once.
 type Step struct {
 	Placed board.Hex `json:"placed"`
+	// Also lists any other hexes that got obstacles in the same step, such
+	// as a symmetric partner.
+	Also []board.Hex `json:"also,omitempty"`
 	// Candidates are the cells the obstacle could have been placed on.
 	Candidates []Candidate `json:"candidates"`
 }

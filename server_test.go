@@ -114,6 +114,17 @@ func TestGenerateEdgeLength(t *testing.T) {
 	}
 }
 
+func TestGenerateSplitCountsObstacles(t *testing.T) {
+	// With is_symmetric, steps place pairs, but placed counts obstacles.
+	resp := generate(t, "algorithm=split&k_obstacles=16&seed=3")
+	if resp.Placed != 16 || countObstacles(resp.Board) != 16 {
+		t.Errorf("placed = %d with %d on the board, want 16", resp.Placed, countObstacles(resp.Board))
+	}
+	if len(resp.Trace.Steps) >= 16 {
+		t.Errorf("trace has %d steps, want fewer than 16 as most place a pair", len(resp.Trace.Steps))
+	}
+}
+
 func TestGenerateFillsBoard(t *testing.T) {
 	resp := generate(t, "algorithm=uniform&k_obstacles=1000")
 	if resp.Placed != len(resp.Board.Cells) {
@@ -169,8 +180,12 @@ func TestAlgorithms(t *testing.T) {
 	if err := json.NewDecoder(rec.Body).Decode(&algs); err != nil {
 		t.Fatalf("decoding response: %v", err)
 	}
-	if len(algs) != 3 || algs[0].ID != "uniform" || algs[1].ID != "evolved" || algs[2].ID != "triple_beta" {
-		t.Fatalf("algorithms = %+v, want uniform, evolved and triple_beta", algs)
+	var ids []string
+	for _, a := range algs {
+		ids = append(ids, a.ID)
+	}
+	if got := strings.Join(ids, " "); got != "uniform evolved triple_beta split" {
+		t.Fatalf("algorithms = %s, want uniform, evolved, triple_beta and split", got)
 	}
 	if n := len(algs[1].Params); n != 17 {
 		t.Errorf("evolved has %d parameters, want 17", n)
