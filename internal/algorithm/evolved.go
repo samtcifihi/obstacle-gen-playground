@@ -86,11 +86,11 @@ func evolvedConfig(v Values) EvolvedConfig {
 }
 
 var scalarOptions = []Option{
-	{Value: "sqrt", Label: "2 root", Inverse: "square"},
-	{Value: "square", Label: "2 ^", Inverse: "sqrt"},
-	{Value: "identity", Label: "T f -> T :: x", Inverse: "identity"},
-	{Value: "ln", Label: "ln", Inverse: "exp"},
-	{Value: "exp", Label: "e x ^", Inverse: "ln"},
+	{Value: "sqrt", Label: "sqrt(x)", Inverse: "square"},
+	{Value: "square", Label: "x^2", Inverse: "sqrt"},
+	{Value: "identity", Label: "x", Inverse: "identity"},
+	{Value: "ln", Label: "ln(x)", Inverse: "exp"},
+	{Value: "exp", Label: "e^x", Inverse: "ln"},
 }
 
 var scalarFuncs = map[string]func(float64) float64{

@@ -70,15 +70,14 @@ grouped by axis, to one number. Flattened, that's
 `f_dir(f_a'(f_b(f_a(a), f_a(b))), f_a'(f_b(f_a(c), f_a(d))), f_a'(f_b(f_a(e), f_a(f))))`.
 `f_a'` is always the inverse of `f_a`, so it's set automatically and only
 shown for reference. That makes each conjugate a generalised mean: the defaults
-(`2 root`, `mean`, `2 ^`) give the power mean with exponent ½, and `ln`, `mean`,
-`e x ^` gives the geometric mean.
+(`sqrt(x)`, `mean`, `x^2`) give the power mean with exponent ½, and `ln(x)`,
+`mean`, `e^x` gives the geometric mean.
 
-- `f_a` (and so `f_a'`): `2 root` ↔ `2 ^`, `T f -> T :: x` (identity),
-  `ln` ↔ `e x ^`
+- `f_a` (and so `f_a'`): `sqrt(x)` ↔ `x^2`, `x` (identity), `ln(x)` ↔ `e^x`
 - `f_b` and `f_dir`: `mean`, `geom_mean`, `harm_mean`, `median`, `max`, `min`
 
-`ln 0` is −∞, so with `ln` a distance of 0 usually pulls the result to 0. Some
-combinations, like `ln` then `geom_mean` (which multiplies −∞ by 0), are
+`ln(0)` is −∞, so with `ln(x)` a distance of 0 usually pulls the result to 0.
+Some combinations, like `ln(x)` then `geom_mean` (which multiplies −∞ by 0), are
 undefined for some distances. A cell whose distance term comes out undefined
 or infinite has no score for that round, and shows as "can't be chosen".
 
