@@ -284,7 +284,8 @@ func TestTripleBetaRecordsDistances(t *testing.T) {
 	var placed []board.Hex
 	for i, step := range trace.Steps {
 		for _, c := range step.Candidates {
-			if want := float64(nearestObstacle(c.Hex, placed, 7)); c.Values[distance] != want {
+			// The trace shows hex distance: one more than the cells between.
+			if want := float64(nearestObstacle(c.Hex, placed, 7) + 1); c.Values[distance] != want {
 				t.Fatalf("step %d: %v recorded distance %v, want %v", i, c.Hex, c.Values[distance], want)
 			}
 		}
@@ -339,7 +340,7 @@ func TestParseObstaclesSymmetric(t *testing.T) {
 
 func TestTripleBetaSeesAcrossTheBoard(t *testing.T) {
 	// With one obstacle in the left corner, distances run all the way to
-	// the right corner, 7 cells between, rather than stopping at 4.
+	// the right corner, 8 steps away, rather than stopping at 5.
 	b := board.NewHexagon(5)
 	b.Cells[b.Index()[board.Hex{Q: -4}]].Obstacle = true
 	cfg := defaultTripleBetaConfig(t)
@@ -350,7 +351,7 @@ func TestTripleBetaSeesAcrossTheBoard(t *testing.T) {
 	for _, c := range trace.Steps[0].Candidates {
 		got[c.Hex] = c.Values[distance]
 	}
-	for h, want := range map[board.Hex]float64{{Q: -3}: 0, {Q: 0}: 3, {Q: 2}: 5, {Q: 4}: 7, {Q: 4, R: -4}: 7} {
+	for h, want := range map[board.Hex]float64{{Q: -3}: 1, {Q: 0}: 4, {Q: 2}: 6, {Q: 4}: 8, {Q: 4, R: -4}: 8} {
 		if got[h] != want {
 			t.Errorf("%v has distance %v, want %v", h, got[h], want)
 		}

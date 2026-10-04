@@ -119,6 +119,8 @@ edge length minus 3, so 9 on the default board. No two hexes are further apart
 than that, so no obstacle is ever out of range. With no obstacles yet, every
 hex is at S. Like the coordinates, `d` is scaled to the middle of its band,
 `(d + ½)/(S + 1)`, and the hex's weight is multiplied by the density there.
+The heatmap and hover text show the plain hex distance instead, `d + 1`: 1 if
+adjacent, up to 10 on the default board.
 
 - Beta(1, 1) is neutral.
 - α > β favours larger distances, spreading obstacles out.

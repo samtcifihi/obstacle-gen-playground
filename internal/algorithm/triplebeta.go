@@ -173,9 +173,11 @@ func TripleBeta(b *board.Board, cfg TripleBetaConfig, rng *rand.Rand) Trace {
 
 		step := Step{Placed: b.Cells[pick].Hex, Candidates: make([]Candidate, len(options))}
 		for j, o := range options {
+			// The weights count the cells between a hex and the nearest
+			// obstacle, but the trace shows the plain hex distance.
 			step.Candidates[j] = Candidate{
 				Hex:    b.Cells[o.cell].Hex,
-				Values: []float64{o.weight / total, o.weight, positions[o.cell], float64(o.distance), o.distanceWeight},
+				Values: []float64{o.weight / total, o.weight, positions[o.cell], float64(o.distance + 1), o.distanceWeight},
 			}
 		}
 		trace.Steps = append(trace.Steps, step)
@@ -189,7 +191,7 @@ var tripleBetaMetrics = []Metric{
 	{Name: "chance", Description: "Chance of getting this obstacle", Percent: true},
 	{Name: "weight", Description: "Weight (position weight × distance weight)"},
 	{Name: "position", Description: "Position weight (product of the three axis densities)"},
-	{Name: "distance", Description: "Distance to the nearest obstacle (the board's span if there are none)", Integer: true},
+	{Name: "distance", Description: "Hex distance to the nearest obstacle (1 if adjacent)", Integer: true},
 	{Name: "distance_weight", Description: "Distance weight (density at the scaled distance)"},
 }
 
