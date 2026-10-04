@@ -1,6 +1,8 @@
 package algorithm
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
 	"math"
 	"math/rand/v2"
@@ -127,8 +129,8 @@ type Param struct {
 
 // Follow makes a parameter take another's value while a condition holds.
 type Follow struct {
-	// When names a Bool parameter that must be true, or false if prefixed
-	// with "!". Empty means always.
+	// When is a condition, written like OnlyIf, that must hold. Empty means
+	// always.
 	When string `json:"when,omitempty"`
 	// Param names the parameter to take the value of. It and When's
 	// parameter must come earlier in the list.
@@ -141,7 +143,7 @@ type Follow struct {
 // so far, if any.
 func (p Param) following(v Values) (Follow, bool) {
 	for _, f := range p.Follows {
-		if f.When == "" || v.Bool(strings.TrimPrefix(f.When, "!")) != strings.HasPrefix(f.When, "!") {
+		if v.holds(f.When) {
 			return f, true
 		}
 	}
@@ -242,6 +244,86 @@ func (p Param) rangeText() string {
 
 // Values holds parsed parameter values by name.
 type Values map[string]any
+
+// holds reports whether a condition, like Param.OnlyIf, holds for v. An
+// empty condition always holds.
+func (v Values) holds(condition string) bool {
+	if condition == "" {
+		return true
+	}
+	if name, value, ok := strings.Cut(condition, "="); ok {
+		return v.Choice(name) == value
+	}
+	return v.Bool(strings.TrimPrefix(condition, "!")) != strings.HasPrefix(condition, "!")
+}
+
+// Active returns the values in v of a's parameters that have any effect,
+// those whose OnlyIf condition holds, in the order a lists them.
+func (a Algorithm) Active(v Values) ParamValues {
+	active := ParamValues{}
+	for _, p := range a.Params {
+		if v.holds(p.OnlyIf) {
+			active = append(active, ParamValue{Name: p.Name, Value: v[p.Name]})
+		}
+	}
+	return active
+}
+
+// ParamValues lists parameter values in order. It encodes as a JSON
+// object, keeping the order.
+type ParamValues []ParamValue
+
+// ParamValue is the value of one parameter.
+type ParamValue struct {
+	Name  string
+	Value any
+}
+
+func (pv ParamValues) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	buf.WriteByte('{')
+	for i, p := range pv {
+		if i > 0 {
+			buf.WriteByte(',')
+		}
+		name, err := json.Marshal(p.Name)
+		if err != nil {
+			return nil, err
+		}
+		value, err := json.Marshal(p.Value)
+		if err != nil {
+			return nil, err
+		}
+		buf.Write(name)
+		buf.WriteByte(':')
+		buf.Write(value)
+	}
+	buf.WriteByte('}')
+	return buf.Bytes(), nil
+}
+
+// UnmarshalJSON reads parameter values from a JSON object, keeping their
+// order. Numbers come out as float64s.
+func (pv *ParamValues) UnmarshalJSON(data []byte) error {
+	dec := json.NewDecoder(bytes.NewReader(data))
+	if tok, err := dec.Token(); err != nil || tok != json.Delim('{') {
+		return fmt.Errorf("parameter values must be a JSON object")
+	}
+	*pv = ParamValues{}
+	for dec.More() {
+		tok, err := dec.Token()
+		if err != nil {
+			return err
+		}
+		var value any
+		if err := dec.Decode(&value); err != nil {
+			return err
+		}
+		*pv = append(*pv, ParamValue{Name: tok.(string), Value: value})
+	}
+	_, err := dec.Token()
+	return err
+}
 
 func (v Values) Int(name string) int       { return v[name].(int) }
 func (v Values) Float(name string) float64 { return v[name].(float64) }

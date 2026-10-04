@@ -27,6 +27,12 @@ const metricSelect = document.getElementById("metric");
 const legendEl = document.getElementById("legend");
 const cellInfo = document.getElementById("cell-info");
 const copyButton = document.getElementById("copy-image");
+const copySettingsButton = document.getElementById("copy-settings");
+const saveSettingsButton = document.getElementById("save-settings");
+const loadDialog = document.getElementById("load-dialog");
+const settingsText = document.getElementById("settings-text");
+const settingsFile = document.getElementById("settings-file");
+const loadMessage = document.getElementById("load-message");
 
 // Parameter panels by algorithm ID: { alg, element, inputs: Map(name → input) }.
 const panels = new Map();
@@ -302,6 +308,8 @@ function showResult(data) {
   setFrame(wasAtEnd ? data.trace.steps.length : view.frame);
   showStatus(data);
   copyButton.disabled = false;
+  copySettingsButton.disabled = false;
+  saveSettingsButton.disabled = false;
 }
 
 // Paint properties copied onto the board image, as the stylesheet doesn't
@@ -359,14 +367,16 @@ async function download(png, name) {
   setTimeout(() => URL.revokeObjectURL(url), 60_000);
 }
 
-let copyTimer;
+const flashTimers = new Map();
 
-function copyFeedback(text) {
-  copyButton.textContent = text;
-  clearTimeout(copyTimer);
-  copyTimer = setTimeout(() => {
-    copyButton.textContent = "Copy image";
-  }, 2000);
+// flash shows text on button for a moment, as feedback.
+function flash(button, text) {
+  button.dataset.label ??= button.textContent;
+  button.textContent = text;
+  clearTimeout(flashTimers.get(button));
+  flashTimers.set(button, setTimeout(() => {
+    button.textContent = button.dataset.label;
+  }, 2000));
 }
 
 // copyImage puts the board on the clipboard. Browsers only allow that on
@@ -384,16 +394,131 @@ function copyImage() {
     ? navigator.clipboard.write([new ClipboardItem({ "image/png": png })])
     : Promise.reject(new Error("can't write images to the clipboard"));
   copied
-    .then(() => copyFeedback("Copied"))
+    .then(() => flash(copyButton, "Copied"))
     .catch(async (err) => {
       console.warn("Couldn't copy the board, so downloading it instead:", err);
       await download(png, name);
-      copyFeedback("Downloaded");
+      flash(copyButton, "Downloaded");
     })
     .catch((err) => {
       console.error("Couldn't copy or download the board:", err);
-      copyFeedback("Failed");
+      flash(copyButton, "Failed");
     });
+}
+
+// settingsJSON returns the settings behind the board shown, as JSON: the
+// algorithm, board, seed and parameters, and the commit of the code that
+// made it. See README.md.
+function settingsJSON() {
+  return `${JSON.stringify(view.data.settings, null, 2)}\n`;
+}
+
+function settingsName() {
+  const { algorithm, seed } = view.data.settings;
+  return `${algorithm}-seed-${seed}.json`;
+}
+
+function copySettings() {
+  if (!view.data) {
+    return;
+  }
+  const text = settingsJSON();
+  const name = settingsName();
+  const copied = navigator.clipboard?.writeText
+    ? navigator.clipboard.writeText(text)
+    : Promise.reject(new Error("can't write to the clipboard"));
+  copied
+    .then(() => flash(copySettingsButton, "Copied"))
+    .catch(async (err) => {
+      console.warn("Couldn't copy the settings, so downloading them instead:", err);
+      await download(new Blob([text], { type: "application/json" }), name);
+      flash(copySettingsButton, "Downloaded");
+    });
+}
+
+function saveSettings() {
+  if (view.data) {
+    download(new Blob([settingsJSON()], { type: "application/json" }), settingsName());
+  }
+}
+
+// applySettings sets the page up as settings (parsed settings JSON) say,
+// and generates the board. Parameters left out take their defaults, as do
+// the edge length and seed. It returns warnings about anything it ignored,
+// and throws if the settings make no sense.
+function applySettings(settings) {
+  if (typeof settings !== "object" || settings === null || Array.isArray(settings)) {
+    throw new Error("expected a JSON object");
+  }
+  const old = panels.get(settings.algorithm);
+  if (!old) {
+    throw new Error(`algorithm must be one of: ${[...panels.keys()].join(", ")}`);
+  }
+  const params = settings.params ?? {};
+  if (typeof params !== "object" || params === null || Array.isArray(params)) {
+    throw new Error("params must be an object");
+  }
+
+  const warnings = [];
+  const known = new Set(old.alg.params.map((p) => p.name));
+  const unknown = Object.keys(params).filter((name) => !known.has(name));
+  if (unknown.length) {
+    warnings.push(`Ignored parameters ${old.alg.name} doesn't have: ${unknown.join(", ")}.`);
+  }
+  const current = view.data?.settings.commit;
+  if (settings.commit && current && settings.commit !== current) {
+    warnings.push(
+      `These settings came from commit ${settings.commit.slice(0, 7)}, but this is ${current.slice(0, 7)}, ` +
+        "so the algorithm may have changed since.",
+    );
+  }
+
+  const initial = new Map(
+    Object.entries(params).filter(([name]) => known.has(name)).map(([name, value]) => [name, String(value)]),
+  );
+  const panel = buildPanel(old.alg, initial);
+  old.element.replaceWith(panel.element);
+  panels.set(old.alg.id, panel);
+  algorithmSelect.value = old.alg.id;
+  showCurrentPanel();
+  edgeInput.value = settings.edge == null ? edgeInput.defaultValue : String(settings.edge);
+  seedInput.value = settings.seed == null ? "" : String(settings.seed);
+  generate();
+  return warnings;
+}
+
+function showLoadMessage(text, isError) {
+  loadMessage.textContent = text;
+  loadMessage.classList.toggle("error", isError);
+}
+
+function openLoadDialog() {
+  showLoadMessage("", false);
+  loadDialog.showModal();
+  // Selected, so pasting replaces whatever was loaded last time.
+  settingsText.select();
+}
+
+function loadSettings() {
+  let settings;
+  try {
+    settings = JSON.parse(settingsText.value);
+  } catch (err) {
+    showLoadMessage(`That isn't valid JSON: ${err.message}`, true);
+    return;
+  }
+  let warnings;
+  try {
+    warnings = applySettings(settings);
+  } catch (err) {
+    showLoadMessage(`Couldn't load these settings: ${err.message}`, true);
+    return;
+  }
+  if (warnings.length) {
+    showLoadMessage(`Applied. ${warnings.join(" ")}`, false);
+  } else {
+    loadDialog.close();
+  }
 }
 
 function paramInput(alg, param) {
@@ -663,6 +788,20 @@ metricSelect.addEventListener("change", () => {
 });
 
 copyButton.addEventListener("click", copyImage);
+copySettingsButton.addEventListener("click", copySettings);
+saveSettingsButton.addEventListener("click", saveSettings);
+document.getElementById("load-settings").addEventListener("click", openLoadDialog);
+document.getElementById("apply-settings").addEventListener("click", loadSettings);
+document.getElementById("cancel-load").addEventListener("click", () => loadDialog.close());
+document.getElementById("open-settings").addEventListener("click", () => settingsFile.click());
+settingsFile.addEventListener("change", async () => {
+  const [file] = settingsFile.files;
+  if (file) {
+    settingsText.value = await file.text();
+    showLoadMessage(`Opened ${file.name}.`, false);
+  }
+  settingsFile.value = ""; // so opening the same file again still counts as a change
+});
 
 svg.addEventListener("pointerover", (event) => {
   const key = event.target.dataset?.key;

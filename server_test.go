@@ -6,7 +6,9 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"reflect"
+	"regexp"
 	"strconv"
 	"strings"
 	"testing"
@@ -216,6 +218,82 @@ func TestBrowserURL(t *testing.T) {
 		}
 		if got := browserURL(tcp); got != want {
 			t.Errorf("browserURL(%s) = %s, want %s", addr, got, want)
+		}
+	}
+}
+
+func TestGenerateSettings(t *testing.T) {
+	// k_beta_1=4 is ignored, as is_alpha_eq_beta (on by default) makes it
+	// follow k_alpha_1.
+	resp := generate(t, "algorithm=triple_beta&edge=5&seed=7&f_obstacles_distance_mode=per_axis&k_alpha_obstacles_1=3/2&k_alpha_1=9&k_beta_1=4")
+	s := resp.Settings
+	if s.Repo != repoURL || s.Algorithm != "triple_beta" || s.AlgorithmName != "Triple Beta" || s.Edge != 5 || s.Seed != 7 {
+		t.Errorf("settings = %+v", s)
+	}
+	if s.Commit != "" && !regexp.MustCompile(`^[0-9a-f]{40}$`).MatchString(s.Commit) {
+		t.Errorf("commit = %q, want a full git hash or nothing", s.Commit)
+	}
+	params := make(map[string]any)
+	var names []string
+	for _, p := range s.Params {
+		params[p.Name] = p.Value
+		names = append(names, p.Name)
+	}
+	// Active parameters only, with the values used, including followed ones.
+	for name, want := range map[string]any{
+		"k_obstacles": 16.0, "f_obstacles_distance_mode": "per_axis", "k_alpha_obstacles_1": 1.5,
+		"k_alpha_obstacles_3": 1.5, "is_alpha_eq_beta": true, "k_alpha_1": 9.0, "k_beta_1": 9.0, "k_beta_3": 9.0,
+	} {
+		if params[name] != want {
+			t.Errorf("settings have %s = %v, want %v", name, params[name], want)
+		}
+	}
+	if _, ok := params["k_alpha_obstacles"]; ok {
+		t.Errorf("settings have k_alpha_obstacles, which per-axis mode doesn't use: %v", names)
+	}
+	if names[0] != "k_obstacles" || names[len(names)-1] != "k_beta_obstacles_3" {
+		t.Errorf("parameters %v, want them in the order the algorithm lists them", names)
+	}
+	// It encodes as {"repo": ..., "params": {...}}, with params in order.
+	body := get(t, "/api/generate?algorithm=uniform&seed=1").Body.String()
+	if !strings.Contains(body, `"settings":{"repo":"`+repoURL+`"`) || !strings.Contains(body, `"params":{"k_obstacles":16,"k_max_bank":0}`) {
+		t.Errorf("settings encode as %s", body[strings.Index(body, `"settings"`):])
+	}
+}
+
+func TestSettingsReproduceBoards(t *testing.T) {
+	// Generating again from just the settings gives the same board and
+	// trace.
+	for _, query := range []string{
+		"algorithm=uniform&k_obstacles=20&k_max_bank=3",
+		"algorithm=evolved&edge=5&is_obstacles_flattened=false&f_obstacles_a=ln&is_weighted=false&k_beta=1/3",
+		"algorithm=triple_beta&k_alpha_1=2&is_axes_shared=false&k_beta_2=5&k_alpha_obstacles=3&k_beta_obstacles=1.5",
+		"algorithm=triple_beta&edge=7&f_obstacles_distance_mode=per_axis&is_obstacle_axes_shared=false&k_alpha_obstacles_2=4",
+		"algorithm=split&is_symmetric=false&k_noise=3&f_split_axes=mean&k_adjacent_penalty=1/2",
+	} {
+		first := generate(t, query)
+		s := first.Settings
+		again := fmt.Sprintf("algorithm=%s&edge=%d&seed=%d", s.Algorithm, s.Edge, s.Seed)
+		for _, p := range s.Params {
+			var value string
+			switch v := p.Value.(type) {
+			case float64:
+				value = strconv.FormatFloat(v, 'g', -1, 64)
+			case bool:
+				value = strconv.FormatBool(v)
+			case string:
+				value = v
+			default:
+				t.Fatalf("%s: %s has value %#v", query, p.Name, p.Value)
+			}
+			again += "&" + url.QueryEscape(p.Name) + "=" + url.QueryEscape(value)
+		}
+		second := generate(t, again)
+		if !reflect.DeepEqual(first.Board, second.Board) || !reflect.DeepEqual(first.Trace, second.Trace) {
+			t.Errorf("%s: generating again from its settings, %s, gave a different board", query, again)
+		}
+		if !reflect.DeepEqual(first.Settings, second.Settings) {
+			t.Errorf("%s: settings %+v, then %+v", query, first.Settings, second.Settings)
 		}
 	}
 }

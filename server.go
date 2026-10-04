@@ -28,10 +28,28 @@ const (
 var webFS embed.FS
 
 type generateResponse struct {
-	Seed   uint64          `json:"seed,string"`
-	Placed int             `json:"placed"`
-	Board  *board.Board    `json:"board"`
-	Trace  algorithm.Trace `json:"trace"`
+	Seed     uint64          `json:"seed,string"`
+	Placed   int             `json:"placed"`
+	Board    *board.Board    `json:"board"`
+	Trace    algorithm.Trace `json:"trace"`
+	Settings settings        `json:"settings"`
+}
+
+// settings records how a board was made, so it can be shared, saved, and
+// loaded back into the page.
+type settings struct {
+	Repo string `json:"repo"`
+	// Commit is the commit of Repo the server was built from, if known, and
+	// Modified whether it had changes that weren't committed.
+	Commit        string `json:"commit,omitempty"`
+	Modified      bool   `json:"modified,omitempty"`
+	Algorithm     string `json:"algorithm"`
+	AlgorithmName string `json:"algorithmName"`
+	Edge          int    `json:"edge"`
+	Seed          uint64 `json:"seed,string"`
+	// Params holds the parameters that had any effect, in the order the
+	// algorithm lists them, including any that followed another.
+	Params algorithm.ParamValues `json:"params"`
 }
 
 func newHandler() http.Handler {
@@ -96,7 +114,23 @@ func handleGenerate(w http.ResponseWriter, r *http.Request) {
 
 	b := board.NewHexagon(edge)
 	trace := alg.Run(b, params, rand.New(rand.NewPCG(seed, 0)))
-	writeJSON(w, generateResponse{Seed: seed, Placed: trace.Placed(), Board: b, Trace: trace})
+	commit, modified := sourceVersion()
+	writeJSON(w, generateResponse{
+		Seed:   seed,
+		Placed: trace.Placed(),
+		Board:  b,
+		Trace:  trace,
+		Settings: settings{
+			Repo:          repoURL,
+			Commit:        commit,
+			Modified:      modified,
+			Algorithm:     alg.ID,
+			AlgorithmName: alg.Name,
+			Edge:          edge,
+			Seed:          seed,
+			Params:        alg.Active(params),
+		},
+	})
 }
 
 func writeJSON(w http.ResponseWriter, v any) {

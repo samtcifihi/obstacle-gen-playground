@@ -103,7 +103,14 @@ form {
 
 .actions {
   display: flex;
+  flex-wrap: wrap;
+  align-items: center;
   gap: 8px;
+}
+
+.actions-label {
+  color: var(--muted);
+  font-size: 0.875rem;
 }
 
 .panel {
@@ -159,7 +166,8 @@ code {
 }
 
 input,
-select {
+select,
+textarea {
   padding: 6px 8px;
   border: 1px solid var(--border);
   border-radius: 6px;
@@ -386,4 +394,56 @@ button.icon {
   stroke-width: 4;
   stroke-linejoin: round;
   pointer-events: none;
+}
+
+dialog {
+  width: min(560px, calc(100% - 32px));
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--fg);
+}
+
+dialog::backdrop {
+  background: rgb(0 0 0 / 40%);
+}
+
+dialog h2 {
+  margin: 0 0 8px;
+  font-size: 1.1rem;
+}
+
+dialog textarea {
+  display: block;
+  width: 100%;
+  margin-top: 12px;
+  resize: vertical;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.8rem;
+}
+
+.load-message {
+  min-height: 1.4em;
+  margin: 8px 0;
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+
+.load-message.error {
+  color: var(--error);
+}
+
+.dialog-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.dialog-actions button {
+  padding: 8px 12px;
+}
+
+.dialog-actions .push {
+  margin-left: auto;
 }

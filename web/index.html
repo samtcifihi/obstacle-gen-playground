@@ -30,6 +30,12 @@
           <button type="submit">Generate</button>
           <button type="button" id="reset" class="secondary">Reset parameters</button>
         </div>
+        <div class="actions">
+          <span class="actions-label">Settings</span>
+          <button type="button" id="copy-settings" class="secondary small" title="Copy the settings behind the board shown to the clipboard, as JSON" disabled>Copy</button>
+          <button type="button" id="save-settings" class="secondary small" title="Save the settings behind the board shown as a .json file" disabled>Save</button>
+          <button type="button" id="load-settings" class="secondary small" title="Apply settings from JSON, pasted or from a saved file">Load…</button>
+        </div>
         <div id="params"></div>
       </form>
       <section class="output">
@@ -57,6 +63,19 @@
       </section>
     </div>
   </main>
+  <dialog id="load-dialog" aria-labelledby="load-title">
+    <h2 id="load-title">Load settings</h2>
+    <p class="description">Paste settings copied from this page, or open a saved <code>.json</code> file. Parameters left out take their defaults.</p>
+    <textarea id="settings-text" rows="14" spellcheck="false" autocomplete="off" aria-label="Settings JSON"
+      placeholder='{"algorithm": "triple_beta", "edge": 6, "params": {"k_obstacles": 16}}'></textarea>
+    <p id="load-message" class="load-message" role="status"></p>
+    <div class="dialog-actions">
+      <button type="button" id="open-settings" class="secondary">Open file…</button>
+      <input type="file" id="settings-file" accept=".json,application/json" hidden>
+      <button type="button" id="cancel-load" class="secondary push">Cancel</button>
+      <button type="button" id="apply-settings">Apply</button>
+    </div>
+  </dialog>
   <script src="app.js"></script>
 </body>
 </html>

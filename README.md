@@ -28,6 +28,55 @@ machine (say, with `addr=0.0.0.0:8080`), so there it downloads the PNG instead.
 Parameters that take real numbers (rather than whole numbers) accept fractions
 as well as decimals: `1/2` and `0.5` are the same.
 
+## Saving and sharing settings
+
+The Settings buttons work with a small JSON description of the board shown.
+"Copy" puts it on the clipboard (or downloads it, where the browser doesn't
+allow that), "Save" downloads it as a `.json` file, and "Load…" applies
+settings pasted in or opened from a file, and generates the board. Use them
+to keep settings that look good, or to hand them over, with a link to this
+repository, to whoever implements the algorithm somewhere else.
+
+```json
+{
+  "repo": "https://github.com/samtcifihi/obstacle-gen-playground",
+  "commit": "8318d82384c844a6cc956c98e76a6c4239ff688a",
+  "algorithm": "triple_beta",
+  "algorithmName": "Triple Beta",
+  "edge": 6,
+  "seed": "7",
+  "params": {
+    "k_obstacles": 16,
+    "k_max_bank": 0,
+    "is_alpha_eq_beta": true,
+    ...
+    "f_obstacles_distance_mode": "aggregate",
+    "is_obstacles_alpha_eq_beta": false,
+    "k_alpha_obstacles": 6,
+    "k_beta_obstacles": 1
+  }
+}
+```
+
+- `commit` is the commit the server was built from, so the algorithm can be
+  looked up as it was then, even if it has changed since. `"modified": true`
+  means the code had changes that weren't committed, so it may not match
+  exactly. The server asks git, so these are there when it runs from a clone,
+  and left out if it can't tell.
+- `algorithm` is the algorithm's ID, and `algorithmName` its name, as in the
+  headings below.
+- `edge` and `seed` give the exact board shown.
+- `params` lists the parameters that affect the result, in the order the page
+  shows them, with the values used. That includes values set automatically
+  from another parameter, like Triple Beta's `k_beta_1` while
+  `is_alpha_eq_beta` is on, but not parameters that are switched off, like
+  the per-axis distance parameters in aggregate mode.
+
+Loading is forgiving: anything left out takes its default (a random seed, for
+the seed), and parameters the algorithm doesn't have, say because they've
+been renamed, are ignored with a warning. If the settings came from a
+different commit, it warns that the algorithm may have changed since.
+
 ## Algorithms
 
 ### Uniform
@@ -298,7 +347,8 @@ Parameters that are left out take their defaults.
       },
       ...
     ]
-  }
+  },
+  "settings": { "repo": "...", "algorithm": "evolved", "params": { ... }, ... }
 }
 ```
 
@@ -306,7 +356,8 @@ The trace has one step per choice, in order. Most steps place one obstacle at
 `placed`; Split (mrraow) with `is_symmetric` also lists the mirrored one in
 `also`. Each step lists the cells that could have been chosen, with one value
 per metric. If the algorithm stopped early, `trace.note` says why. `placed` at
-the top level counts obstacles, not steps.
+the top level counts obstacles, not steps. `settings` describes how the board
+was made, as in [Saving and sharing settings](#saving-and-sharing-settings).
 
 Cells use [axial coordinates](https://www.redblobgames.com/grids/hexagons/#coordinates-axial).
 The seed is a string because it can exceed JavaScript's safe integer range.
