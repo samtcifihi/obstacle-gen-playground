@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Obstacle Generator</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main>
+    <h1>Obstacle Generator</h1>
+    <form id="controls">
+      <fieldset>
+        <legend>Uniform random</legend>
+        <label>
+          <span>Obstacles (<var>n</var>)</span>
+          <input type="number" name="n" min="0" step="1" value="10" required>
+        </label>
+        <label>
+          <span>Seed</span>
+          <input type="text" name="seed" inputmode="numeric" pattern="[0-9]*" placeholder="random" autocomplete="off">
+        </label>
+      </fieldset>
+      <button type="submit">Generate</button>
+    </form>
+    <p id="status" role="status"></p>
+    <svg id="board" role="img" aria-label="Hex board"></svg>
+  </main>
+  <script src="app.js"></script>
+</body>
+</html>
