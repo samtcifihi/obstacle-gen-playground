@@ -5,8 +5,9 @@ game boards.
 
 The board is a hexagon of hexes, with one obstacle type. Its edge length is
 set separately from the algorithm: 6 by default (91 hexes), from 1 to 15. Pick
-an algorithm, tweak its parameters, and the board regenerates as you go. The settings are kept in the address bar, so reloading
-or sharing the page keeps them.
+an algorithm, tweak its parameters, and the board regenerates as you go. The
+settings are kept in the address bar, so reloading or sharing the page keeps
+them.
 
 Each generation uses a seed, shown above the board. Click "reuse" (or type a
 seed) to keep it fixed while you tweak parameters; leave the seed box empty for
@@ -21,10 +22,12 @@ value to its highest. Changing a parameter keeps you on the same step.
 
 ## Algorithms
 
-### Uniform random
+### Uniform
 
-Places `n` obstacles, each on an empty hex chosen with equal probability. If
-`n` is at least the number of empty hexes, the board ends up full.
+Places `k_obstacles` obstacles one at a time, each on a free hex (no obstacle,
+and not making a bank bigger than `k_max_bank`, where 0 means no limit) chosen
+with equal probability. It stops early if no hex is free, so with no bank limit
+and `k_obstacles` at least the number of hexes, the board ends up full.
 
 ### Evolved
 

@@ -45,7 +45,7 @@ func countObstacles(b *board.Board) int {
 }
 
 func TestGenerate(t *testing.T) {
-	resp := generate(t, "algorithm=uniform&n=10&seed=42")
+	resp := generate(t, "algorithm=uniform&k_obstacles=10&seed=42")
 	if resp.Seed != 42 {
 		t.Errorf("seed = %d, want 42", resp.Seed)
 	}
@@ -87,7 +87,7 @@ func TestGenerateTripleBeta(t *testing.T) {
 
 func TestGenerateNothingEncodesEmptySteps(t *testing.T) {
 	for _, query := range []string{
-		"algorithm=uniform&n=0",
+		"algorithm=uniform&k_obstacles=0",
 		"algorithm=evolved&k_obstacles=0",
 		"algorithm=triple_beta&k_obstacles=0",
 	} {
@@ -115,14 +115,14 @@ func TestGenerateEdgeLength(t *testing.T) {
 }
 
 func TestGenerateFillsBoard(t *testing.T) {
-	resp := generate(t, "algorithm=uniform&n=1000")
+	resp := generate(t, "algorithm=uniform&k_obstacles=1000")
 	if resp.Placed != len(resp.Board.Cells) {
 		t.Errorf("placed = %d, want every one of the %d cells", resp.Placed, len(resp.Board.Cells))
 	}
 }
 
 func TestGenerateSeedIsReproducible(t *testing.T) {
-	for _, query := range []string{"algorithm=uniform&n=5", "algorithm=evolved"} {
+	for _, query := range []string{"algorithm=uniform&k_obstacles=5", "algorithm=evolved"} {
 		first := generate(t, query)
 		again := generate(t, query+"&seed="+strconv.FormatUint(first.Seed, 10))
 		if !reflect.DeepEqual(first, again) {
@@ -134,19 +134,20 @@ func TestGenerateSeedIsReproducible(t *testing.T) {
 func TestGenerateRejectsBadParams(t *testing.T) {
 	for _, query := range []string{
 		"",
-		"n=3",
+		"k_obstacles=3",
 		"algorithm=nope",
-		"algorithm=uniform&n=",
-		"algorithm=uniform&n=-1",
-		"algorithm=uniform&n=abc",
-		"algorithm=uniform&n=1.5",
-		"algorithm=uniform&n=3&seed=-1",
-		"algorithm=uniform&n=3&seed=x",
+		"algorithm=uniform&k_obstacles=",
+		"algorithm=uniform&k_obstacles=-1",
+		"algorithm=uniform&k_obstacles=abc",
+		"algorithm=uniform&k_obstacles=1.5",
+		"algorithm=uniform&k_obstacles=3&seed=-1",
+		"algorithm=uniform&k_obstacles=3&seed=x",
 		"algorithm=uniform&edge=0",
 		"algorithm=uniform&edge=16",
 		"algorithm=uniform&edge=-3",
 		"algorithm=uniform&edge=2.5",
 		"algorithm=evolved&k_beta=0",
+		"algorithm=uniform&k_max_bank=-1",
 		"algorithm=evolved&f_edge_b=mode",
 		"algorithm=triple_beta&is_symmetric=false&k_beta_1=0",
 	} {

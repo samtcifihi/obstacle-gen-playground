@@ -402,7 +402,7 @@ func checkTrace(t *testing.T, name string, b *board.Board, trace Trace) {
 
 func TestTraces(t *testing.T) {
 	b := board.NewHexagon(5)
-	checkTrace(t, "uniform", b, Uniform(b, 20, newRNG(1)))
+	checkTrace(t, "uniform", b, Uniform(b, uniform(20), newRNG(1)))
 
 	for _, weighted := range []bool{true, false} {
 		cfg := defaultEvolvedConfig(t)
