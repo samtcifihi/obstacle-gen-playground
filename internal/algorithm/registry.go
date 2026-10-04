@@ -113,8 +113,11 @@ type Param struct {
 	Max *float64 `json:"max,omitempty"`
 	// Options are the values a Choice parameter may take.
 	Options []Option `json:"options,omitempty"`
-	// OnlyIf names a Bool parameter that must be true for this one to have
-	// any effect, or false if the name is prefixed with "!".
+	// OnlyIf is a condition for this parameter to have any effect: the name
+	// of a Bool parameter that must be true, or false if prefixed with "!",
+	// or name=value for a Choice parameter that must have that value. A
+	// choice picks between sets of parameters, so a UI should hide the ones
+	// it doesn't pick, but only grey out those a bool switches off.
 	OnlyIf string `json:"onlyIf,omitempty"`
 	// Follows lists other parameters this one takes its value from. The
 	// first whose condition holds applies, and while one does, this

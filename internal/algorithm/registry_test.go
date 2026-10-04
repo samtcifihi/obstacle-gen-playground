@@ -27,7 +27,13 @@ func TestDefaultsAreValid(t *testing.T) {
 				t.Errorf("%s: default for %s is %#v, but parses as %#v", a.ID, p.Name, p.Default, got)
 			}
 
-			if p.OnlyIf != "" {
+			if name, value, isChoice := strings.Cut(p.OnlyIf, "="); isChoice {
+				if on, ok := earlier[name]; !ok || on.Type != Choice {
+					t.Errorf("%s: %s is only used if %q, which isn't an earlier choice parameter", a.ID, p.Name, p.OnlyIf)
+				} else if _, err := on.parse(value); err != nil {
+					t.Errorf("%s: %s is only used if %q, which isn't an option of %s", a.ID, p.Name, p.OnlyIf, name)
+				}
+			} else if p.OnlyIf != "" {
 				if on, ok := earlier[strings.TrimPrefix(p.OnlyIf, "!")]; !ok || on.Type != Bool {
 					t.Errorf("%s: %s is only used if %q, which isn't an earlier bool parameter", a.ID, p.Name, p.OnlyIf)
 				}

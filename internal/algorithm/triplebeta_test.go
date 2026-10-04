@@ -2,8 +2,10 @@ package algorithm
 
 import (
 	"encoding/json"
+	"fmt"
 	"math"
 	"net/url"
+	"slices"
 	"testing"
 
 	"github.com/samtcifihi/obstacle-gen-playground/internal/board"
@@ -192,6 +194,7 @@ func TestTripleBetaUndefinedWeights(t *testing.T) {
 	for _, cfg := range []func(*TripleBetaConfig){
 		func(cfg *TripleBetaConfig) { cfg.Axes = shapes(1e308, 1e308) },
 		func(cfg *TripleBetaConfig) { cfg.Distance = BetaShape{1e308, 1e308} },
+		func(cfg *TripleBetaConfig) { cfg.PerAxisDistance, cfg.AxisDistances = true, shapes(1e308, 1e308) },
 	} {
 		b := board.NewHexagon(5)
 		c := defaultTripleBetaConfig(t)
@@ -354,6 +357,236 @@ func TestTripleBetaSeesAcrossTheBoard(t *testing.T) {
 	for h, want := range map[board.Hex]float64{{Q: -3}: 1, {Q: 0}: 4, {Q: 2}: 6, {Q: 4}: 8, {Q: 4, R: -4}: 8} {
 		if got[h] != want {
 			t.Errorf("%v has distance %v, want %v", h, got[h], want)
+		}
+	}
+}
+
+func TestTripleBetaAggregateUnchanged(t *testing.T) {
+	// The placements and values Triple Beta gave before per-axis distances
+	// were added, which aggregate mode, the default, keeps.
+	var want []board.Hex
+	for _, qr := range [][2]int{{-3, 5}, {0, 1}, {-2, -3}, {-4, 0}, {-1, 0}, {4, 0}, {-3, -1}, {-3, 2}, {-2, 4}, {0, 0},
+		{3, -2}, {0, 3}, {-4, 4}, {-5, 3}, {-3, -2}, {-4, 1}} {
+		want = append(want, board.Hex{Q: qr[0], R: qr[1]})
+	}
+	wantValues := []float64{0.04590465251922107, 0.858062297730058, 2.415676945436856, 3, 0.35520573202096123}
+	wantMetrics := []string{"chance", "weight", "position", "distance", "distance_weight"}
+	a, _ := Lookup("triple_beta")
+	q := url.Values{
+		"k_alpha_obstacles": {"3"}, "k_beta_obstacles": {"1.5"},
+		"is_symmetric": {"false"}, "is_axes_shared": {"false"},
+		"k_alpha_1": {"2"}, "k_beta_1": {"5"}, "k_alpha_2": {"3"}, "k_beta_2": {"3"}, "k_alpha_3": {"0.7"}, "k_beta_3": {"1.2"},
+	}
+	for _, mode := range []string{"", "aggregate"} {
+		if mode != "" {
+			q.Set("f_obstacles_distance_mode", mode)
+		}
+		v, err := a.Parse(q)
+		if err != nil {
+			t.Fatal(err)
+		}
+		trace := a.Run(board.NewHexagon(6), v, newRNG(7))
+		var metrics []string
+		for _, m := range trace.Metrics {
+			metrics = append(metrics, m.Name)
+		}
+		if !slices.Equal(metrics, wantMetrics) {
+			t.Errorf("mode %q: metrics %v, want %v", mode, metrics, wantMetrics)
+		}
+		var placed []board.Hex
+		for _, step := range trace.Steps {
+			placed = append(placed, step.Placed)
+		}
+		if !slices.Equal(placed, want) {
+			t.Fatalf("mode %q: placed %v, want %v", mode, placed, want)
+		}
+		for _, c := range trace.Steps[3].Candidates {
+			if c.Hex == want[3] && !slices.Equal(c.Values, wantValues) {
+				t.Errorf("mode %q: step 4 recorded %v for %v, want %v", mode, c.Values, c.Hex, wantValues)
+			}
+		}
+	}
+}
+
+func perAxisConfig(t *testing.T, distances [3]BetaShape) TripleBetaConfig {
+	t.Helper()
+	cfg := defaultTripleBetaConfig(t)
+	cfg.PerAxisDistance = true
+	cfg.AxisDistances = distances
+	return cfg
+}
+
+func TestTripleBetaRecordsAxisDistances(t *testing.T) {
+	b := board.NewHexagon(5)
+	cfg := perAxisConfig(t, [3]BetaShape{{5, 1}, {1, 5}, {2, 3}})
+	cfg.Axes = [3]BetaShape{{2, 5}, {3, 3}, {1, 2}}
+	trace := TripleBeta(b, cfg, newRNG(3))
+	checkTrace(t, "triple beta per axis", b, trace)
+	if len(trace.Steps) != cfg.Obstacles {
+		t.Fatalf("placed %d obstacles, want %d; note %q", len(trace.Steps), cfg.Obstacles, trace.Note)
+	}
+	positions := hexWeights(b, cfg.Axes)
+	index := b.Index()
+	weight, position, dw := metricIndex(t, trace, "weight"), metricIndex(t, trace, "position"), metricIndex(t, trace, "distance_weight")
+	coords := func(h board.Hex) [3]int { return [3]int{h.Q, h.R, -h.Q - h.R} }
+	var placed []board.Hex
+	for i, step := range trace.Steps {
+		for _, c := range step.Candidates {
+			product := 1.0
+			for axis, name := range []string{"q", "r", "s"} {
+				// With no obstacles, every coordinate is as far as can be, 2R,
+				// but the term has no effect.
+				wantD, wantW := 8, 1.0
+				if len(placed) > 0 {
+					wantD = 8
+					for _, o := range placed {
+						wantD = min(wantD, abs(coords(c.Hex)[axis]-coords(o)[axis]))
+					}
+					wantW = distanceWeight(wantD, 8, cfg.AxisDistances[axis])
+				}
+				d, w := c.Values[metricIndex(t, trace, name+"_distance")], c.Values[metricIndex(t, trace, name+"_distance_weight")]
+				if d != float64(wantD) || w != wantW {
+					t.Fatalf("step %d: %v has %s distance %v and weight %v, want %d and %v", i, c.Hex, name, d, w, wantD, wantW)
+				}
+				product *= w
+			}
+			pos := positions[index[c.Hex]]
+			if c.Values[dw] != product || c.Values[position] != pos || c.Values[weight] != pos*product {
+				t.Fatalf("step %d: %v has weight %v = %v × %v, want %v × %v", i, c.Hex, c.Values[weight], c.Values[position], c.Values[dw], pos, product)
+			}
+		}
+		placed = append(placed, step.Placed)
+	}
+}
+
+func TestTripleBetaAxisDistancesEmptyBoard(t *testing.T) {
+	// With no obstacles, the distance term has no effect, so the first
+	// obstacle's chances follow the position weights alone. Even shapes
+	// whose densities at the far end would round the product down to 0.
+	b := board.NewHexagon(5)
+	cfg := perAxisConfig(t, shapes(1, 80))
+	cfg.Axes = [3]BetaShape{{2, 5}, {3, 3}, {1, 2}}
+	trace := TripleBeta(b, cfg, newRNG(1))
+	if len(trace.Steps) != cfg.Obstacles {
+		t.Fatalf("placed %d obstacles, want %d; note %q", len(trace.Steps), cfg.Obstacles, trace.Note)
+	}
+	positions := hexWeights(b, cfg.Axes)
+	total := 0.0
+	for _, w := range positions {
+		total += w
+	}
+	index := b.Index()
+	for _, c := range trace.Steps[0].Candidates {
+		if want := positions[index[c.Hex]] / total; math.Abs(c.Values[0]-want) > 1e-12 {
+			t.Errorf("%v has chance %v, want %v", c.Hex, c.Values[0], want)
+		}
+	}
+}
+
+func TestTripleBetaPerAxisIsNotAggregate(t *testing.T) {
+	// From an obstacle at the centre, (2, -2) is two steps along a line,
+	// sharing its s band, and (2, -1) two steps between lines. They're the
+	// same hex distance away, but different q, r and s distances, so even
+	// with every axis tied, per-axis mode weighs them differently.
+	b := board.NewHexagon(5)
+	b.Cells[b.Index()[board.Hex{}]].Obstacle = true
+	cfg := perAxisConfig(t, shapes(1, 3))
+	cfg.Obstacles = 1
+	trace := TripleBeta(b, cfg, newRNG(1))
+	got := make(map[board.Hex][]float64)
+	for _, c := range trace.Steps[0].Candidates {
+		got[c.Hex] = c.Values
+	}
+	values := func(h board.Hex) (distances [3]float64, weight float64) {
+		for axis, name := range []string{"q", "r", "s"} {
+			distances[axis] = got[h][metricIndex(t, trace, name+"_distance")]
+		}
+		return distances, got[h][metricIndex(t, trace, "distance_weight")]
+	}
+	line, lineWeight := values(board.Hex{Q: 2, R: -2})
+	between, betweenWeight := values(board.Hex{Q: 2, R: -1})
+	if line != [3]float64{2, 2, 0} || between != [3]float64{2, 1, 1} {
+		t.Errorf("q, r, s distances are %v and %v, want [2 2 0] and [2 1 1]", line, between)
+	}
+	if lineWeight == betweenWeight {
+		t.Errorf("both have distance weight %v, want different", lineWeight)
+	}
+}
+
+func TestTripleBetaAxisDistanceShapes(t *testing.T) {
+	// Beta(5, 1) on q spreads obstacles over q bands, and Beta(1, 10) on r
+	// gathers them into a few r bands, compared with neutral shapes.
+	bands := func(distances [3]BetaShape) (q, r float64) {
+		const runs = 100
+		for seed := range uint64(runs) {
+			b := board.NewHexagon(6)
+			TripleBeta(b, perAxisConfig(t, distances), newRNG(seed))
+			qs, rs := make(map[int]bool), make(map[int]bool)
+			for _, c := range b.Cells {
+				if c.Obstacle {
+					qs[c.Q], rs[c.R] = true, true
+				}
+			}
+			q += float64(len(qs)) / runs
+			r += float64(len(rs)) / runs
+		}
+		return q, r
+	}
+	spreadQ, _ := bands([3]BetaShape{{5, 1}, {1, 1}, {1, 1}})
+	_, clusteredR := bands([3]BetaShape{{1, 1}, {1, 10}, {1, 1}})
+	neutralQ, neutralR := bands(shapes(1, 1))
+	t.Logf("q bands taken: %.1f (Beta(5, 1)), %.1f (neutral); r bands: %.1f (Beta(1, 10)), %.1f (neutral)", spreadQ, neutralQ, clusteredR, neutralR)
+	if !(spreadQ > neutralQ+1 && clusteredR < neutralR-1) {
+		t.Errorf("q bands taken: %.1f with Beta(5, 1), %.1f neutral; r bands: %.1f with Beta(1, 10), %.1f neutral", spreadQ, neutralQ, clusteredR, neutralR)
+	}
+}
+
+func TestParseDistanceMode(t *testing.T) {
+	a, _ := Lookup("triple_beta")
+	for _, tt := range []struct {
+		mode    string
+		perAxis bool
+	}{{"", false}, {"aggregate", false}, {"per_axis", true}} {
+		q := url.Values{}
+		if tt.mode != "" {
+			q.Set("f_obstacles_distance_mode", tt.mode)
+		}
+		v, err := a.Parse(q)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := tripleBetaConfig(v).PerAxisDistance; got != tt.perAxis {
+			t.Errorf("mode %q: per axis %v, want %v", tt.mode, got, tt.perAxis)
+		}
+	}
+	if _, err := a.Parse(url.Values{"f_obstacles_distance_mode": {"both"}}); err == nil {
+		t.Error("mode both parsed, want an error")
+	}
+}
+
+func TestParseObstacleAxesFollow(t *testing.T) {
+	a, _ := Lookup("triple_beta")
+	q := url.Values{"f_obstacles_distance_mode": {"per_axis"}}
+	for i := range 6 {
+		q.Set(fmt.Sprintf("k_%s_obstacles_%d", [2]string{"alpha", "beta"}[i%2], i/2+1), fmt.Sprint(i+1))
+	}
+	for _, tt := range []struct {
+		symmetric, shared string
+		want              [3]BetaShape
+	}{
+		{"false", "false", [3]BetaShape{{1, 2}, {3, 4}, {5, 6}}},
+		{"true", "false", [3]BetaShape{{1, 1}, {3, 3}, {5, 5}}},
+		{"false", "true", [3]BetaShape{{1, 2}, {1, 2}, {1, 2}}},
+		{"true", "true", [3]BetaShape{{1, 1}, {1, 1}, {1, 1}}},
+	} {
+		q.Set("is_obstacle_axes_symmetric", tt.symmetric)
+		q.Set("is_obstacle_axes_shared", tt.shared)
+		v, err := a.Parse(q)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := tripleBetaConfig(v).AxisDistances; got != tt.want {
+			t.Errorf("is_obstacle_axes_symmetric=%s, is_obstacle_axes_shared=%s: shapes %v, want %v", tt.symmetric, tt.shared, got, tt.want)
 		}
 	}
 }

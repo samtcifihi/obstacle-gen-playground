@@ -120,7 +120,13 @@ symmetry. `is_symmetric` forces α = β for each axis, and `is_axes_shared` make
 axes 2 and 3 use axis 1's α and β. Forced values show locked, the same way as
 Evolved's `f_a'`.
 
-**Distance to obstacles.** A fourth beta distribution (`k_alpha_obstacles`,
+**Distance to obstacles.** The distance weight sets how new obstacles relate
+to existing ones. `f_obstacles_distance_mode` picks how it's measured:
+`aggregate` (the default) by hex distance to the nearest obstacle, or
+`per_axis` by each cube coordinate separately. Only the chosen mode's
+parameters are shown.
+
+*Aggregate.* A fourth beta distribution (`k_alpha_obstacles`,
 `k_beta_obstacles`) sets how far from existing obstacles new ones like to be.
 Each round, each free hex's distance `d` is the number of cells between it and
 the nearest obstacle (0 if adjacent, the same convention as Evolved). It's
@@ -144,9 +150,41 @@ about 1 and Beta(1, 6) about 15. With that many obstacles, most distances are 0
 to 2, low on that board's 0 to 7 scale, so clustering shapes need a larger β to
 pull hard. `is_obstacles_symmetric` (off by default) forces α = β.
 
+*Per axis.* Three more beta distributions, one for each cube coordinate, weigh
+how a hex's coordinate bands relate to those of existing obstacles. A hex's q
+distance is how far its q is from the nearest obstacle's, `d_q = min |q − q'|`
+over the obstacles, and the same for r and s. These count bands, not hex
+steps: `d_q = 0` means an obstacle shares the hex's q band, however far along
+it. On a board of radius R each runs from 0 to 2R (10 on the default board),
+and like the coordinates scales to the middle of its band, `(d + ½)/(2R + 1)`.
+The distance weight is the product of the three densities there:
+
+```text
+w = position weight × f_q(d_q) × f_r(d_r) × f_s(d_s)
+```
+
+using `k_alpha_obstacles_1`/`k_beta_obstacles_1` for q, `_2` for r and `_3`
+for s. So the position distributions say where on the board obstacles go, and
+these say how their bands relate to the bands already taken. For each axis,
+raising α favours bands far from obstacles', raising β favours bands at or
+near them, and Beta(1, 1) makes the axis neutral. For example, q Beta(5, 1),
+r Beta(1, 5) and s Beta(1, 1) favour new q bands and r bands near taken ones,
+and don't mind about s. `is_obstacle_axes_symmetric` forces α = β for each
+axis, and `is_obstacle_axes_shared` (on by default) makes axes 2 and 3 use
+axis 1's α and β, the same way as the position distributions' controls. With
+no obstacles yet the term is left out: every axis weight is 1, and the
+heatmap shows each distance as 2R.
+
+Tying the three axes isn't the same as aggregate mode. Seen from an obstacle,
+a hex 2 steps away along a line, like (2, −2), is (2, 2, 0) away in q, r and
+s, sharing its s band, while one 2 steps away between lines, like (2, −1), is
+(2, 1, 1) away. Aggregate mode sees both at the same distance, but per-axis
+mode generally weighs them differently.
+
 It stops after placing `k_obstacles` obstacles or when no free hex has any
 weight. The heatmap's chances are exact, and it can also show each hex's
-position weight, distance and distance weight.
+position weight, distance weight and distance, or per axis, the q, r and s
+distances and their weights.
 
 **Edges.** Because coordinates and distances scale to the middles of their
 bands, they're never exactly 0 or 1, where a beta density with α or β > 1 is 0

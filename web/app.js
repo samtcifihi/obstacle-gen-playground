@@ -473,23 +473,32 @@ function buildPanel(alg, initial) {
   return panel;
 }
 
-// holds reports whether a condition naming a bool parameter, optionally
-// negated with "!", is true. An empty condition always holds.
+// holds reports whether a condition is true: the name of a bool parameter,
+// optionally negated with "!", or name=value for a choice parameter. An
+// empty condition always holds.
 function holds(panel, condition) {
   if (!condition) {
     return true;
   }
+  const [name, value] = condition.split("=");
+  if (value !== undefined) {
+    return panel.inputs.get(name).value === value;
+  }
   return panel.inputs.get(condition.replace(/^!/, "")).checked !== condition.startsWith("!");
 }
 
-// updateDependents disables parameters whose onlyIf condition doesn't hold,
-// and locks parameters that are following another to that one's value.
-// Parameters only follow earlier ones, so one pass in order is enough.
+// updateDependents switches off parameters whose onlyIf condition doesn't
+// hold, and locks parameters that are following another to that one's
+// value. A choice picks between sets of parameters, so the sets it doesn't
+// pick are hidden, along with any group left empty; a parameter a bool
+// switches off is greyed out. Parameters only follow earlier ones, so one
+// pass in order is enough.
 function updateDependents(panel) {
   const params = new Map(panel.alg.params.map((p) => [p.name, p]));
   for (const param of panel.alg.params) {
     const input = panel.inputs.get(param.name);
     const inactive = param.onlyIf ? !holds(panel, param.onlyIf) : false;
+    const hidden = inactive && param.onlyIf.includes("=");
     const follow = param.follows?.find((f) => holds(panel, f.when));
     if (follow) {
       const value = panel.inputs.get(follow.param).value;
@@ -499,7 +508,12 @@ function updateDependents(panel) {
     }
     input.disabled = inactive || Boolean(follow);
     input.classList.toggle("derived", Boolean(follow));
-    input.closest(".param").classList.toggle("inactive", inactive);
+    const row = input.closest(".param");
+    row.classList.toggle("inactive", inactive && !hidden);
+    row.hidden = hidden;
+  }
+  for (const fieldset of panel.element.querySelectorAll("fieldset")) {
+    fieldset.hidden = [...fieldset.querySelectorAll(".param")].every((row) => row.hidden);
   }
 }
 
