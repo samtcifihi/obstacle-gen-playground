@@ -3,9 +3,9 @@
 A small browser app for trying out algorithms that place random obstacles on
 game boards.
 
-The board is currently a hexagon of hexes with edge length 5 (61 hexes), with
-one obstacle type. Pick an algorithm, tweak its parameters, and the board
-regenerates as you go. The settings are kept in the address bar, so reloading
+The board is a hexagon of hexes, with one obstacle type. Its edge length is
+set separately from the algorithm: 6 by default (91 hexes), from 1 to 15. Pick
+an algorithm, tweak its parameters, and the board regenerates as you go. The settings are kept in the address bar, so reloading
 or sharing the page keeps them.
 
 Each generation uses a seed, shown above the board. Click "reuse" (or type a
@@ -74,9 +74,10 @@ or infinite has no score for that round, and shows as "can't be chosen".
 **Visibility** is the furthest distance from the board's centre cell to the
 edge of an empty board, counted in the cells between them, the same way steps 3
 and 4 count (a cell next to an obstacle or the edge is at distance 0). On a
-hexagon that's its edge length minus 1, so 4 here. On an empty board the centre
-therefore scores 1 for both distance terms. Step 4 counts aren't capped, so
-cells near a corner can score more than 1 in some directions (up to 8/4 here).
+hexagon that's its edge length minus 1, so 5 on the default board. On an empty
+board the centre therefore scores 1 for both distance terms. Step 4 counts
+aren't capped, so cells near a corner can score more than 1 in some directions
+(up to 10/5 on the default board).
 
 ### Triple Beta
 
@@ -113,22 +114,22 @@ Evolved's `f_a'`.
 Each round, each free hex's distance `d` is the number of cells between it and
 the nearest obstacle (0 if adjacent, the same convention as Evolved). It's
 measured up to the board's span S: the longest straight line across the board,
-corner to corner through the centre, counted the same way (7 here). No two
-hexes are further apart than that, so no obstacle is ever out of range. With no
-obstacles yet, every hex is at S. Like the coordinates, `d` is scaled to the
-middle of its band, `(d + ½)/(S + 1)`, and the hex's weight is multiplied by
-the density there.
+corner to corner through the centre, counted the same way. That's twice the
+edge length minus 3, so 9 on the default board. No two hexes are further apart
+than that, so no obstacle is ever out of range. With no obstacles yet, every
+hex is at S. Like the coordinates, `d` is scaled to the middle of its band,
+`(d + ½)/(S + 1)`, and the hex's weight is multiplied by the density there.
 
 - Beta(1, 1) is neutral.
 - α > β favours larger distances, spreading obstacles out.
 - β > α favours smaller distances, clustering them.
 - α = β > 1 favours middling distances, and α = β < 1 favours both extremes.
 
-On this board, with 16 obstacles and flat positions, Beta(1, 1) leaves about 10
-pairs of adjacent obstacles per board, Beta(6, 1) about 1 and Beta(1, 6) about
-15. With that many obstacles, most distances are 0 to 2, low on the 0 to 7
-scale, so clustering shapes need a larger β to pull hard.
-`is_obstacles_symmetric` (off by default) forces α = β.
+On an edge-length-5 board (61 hexes), with 16 obstacles and flat positions,
+Beta(1, 1) leaves about 10 pairs of adjacent obstacles per board, Beta(6, 1)
+about 1 and Beta(1, 6) about 15. With that many obstacles, most distances are 0
+to 2, low on that board's 0 to 7 scale, so clustering shapes need a larger β to
+pull hard. `is_obstacles_symmetric` (off by default) forces α = β.
 
 It stops after placing `k_obstacles` obstacles or when no free hex has any
 weight. The heatmap's chances are exact, and it can also show each hex's
@@ -161,8 +162,9 @@ Without just: `go run .` (flags: `-addr`, `-open`).
 `GET /api/algorithms` lists the algorithms with their parameters: name, type
 (`int`, `float`, `bool` or `choice`), default, minimum and options.
 
-`GET /api/generate?algorithm=<id>[&seed=<seed>][&<param>=<value>...]` returns a
-generated board. Parameters that are left out take their defaults.
+`GET /api/generate?algorithm=<id>[&edge=<1–15>][&seed=<seed>][&<param>=<value>...]`
+returns a generated board. `edge` is the board's edge length (default 6).
+Parameters that are left out take their defaults.
 
 ```json
 {

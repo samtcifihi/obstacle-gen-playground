@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -51,8 +52,8 @@ func TestGenerate(t *testing.T) {
 	if resp.Placed != 10 {
 		t.Errorf("placed = %d, want 10", resp.Placed)
 	}
-	if resp.Board.EdgeLength != boardEdgeLength {
-		t.Errorf("edge length = %d, want %d", resp.Board.EdgeLength, boardEdgeLength)
+	if resp.Board.EdgeLength != defaultEdgeLength {
+		t.Errorf("edge length = %d, want %d", resp.Board.EdgeLength, defaultEdgeLength)
 	}
 	if got := countObstacles(resp.Board); got != 10 {
 		t.Errorf("board has %d obstacles, want 10", got)
@@ -97,6 +98,22 @@ func TestGenerateNothingEncodesEmptySteps(t *testing.T) {
 	}
 }
 
+func TestGenerateEdgeLength(t *testing.T) {
+	// Every algorithm works on every size of board, down to a single hex.
+	for _, alg := range []string{"uniform", "evolved", "triple_beta"} {
+		for _, edge := range []int{1, 2, 3, 7, maxEdgeLength} {
+			resp := generate(t, fmt.Sprintf("algorithm=%s&edge=%d&seed=1", alg, edge))
+			cells := 3*edge*(edge-1) + 1
+			if resp.Board.EdgeLength != edge || len(resp.Board.Cells) != cells {
+				t.Errorf("%s, edge %d: board has edge length %d and %d cells, want %d", alg, edge, resp.Board.EdgeLength, len(resp.Board.Cells), cells)
+			}
+			if resp.Placed == 0 {
+				t.Errorf("%s, edge %d: placed nothing", alg, edge)
+			}
+		}
+	}
+}
+
 func TestGenerateFillsBoard(t *testing.T) {
 	resp := generate(t, "algorithm=uniform&n=1000")
 	if resp.Placed != len(resp.Board.Cells) {
@@ -125,6 +142,10 @@ func TestGenerateRejectsBadParams(t *testing.T) {
 		"algorithm=uniform&n=1.5",
 		"algorithm=uniform&n=3&seed=-1",
 		"algorithm=uniform&n=3&seed=x",
+		"algorithm=uniform&edge=0",
+		"algorithm=uniform&edge=16",
+		"algorithm=uniform&edge=-3",
+		"algorithm=uniform&edge=2.5",
 		"algorithm=evolved&k_beta=0",
 		"algorithm=evolved&f_edge_b=mode",
 		"algorithm=triple_beta&is_symmetric=false&k_beta_1=0",

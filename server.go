@@ -3,6 +3,7 @@ package main
 import (
 	"embed"
 	"encoding/json"
+	"fmt"
 	"io/fs"
 	"log"
 	"math/rand/v2"
@@ -14,8 +15,14 @@ import (
 	"github.com/samtcifihi/obstacle-gen-playground/internal/board"
 )
 
-// boardEdgeLength is the side length, in hexes, of the generated board.
-const boardEdgeLength = 5
+// The board is a hexagon whose sides are edge hexes long. index.html's edge
+// field has the same default and maximum.
+const (
+	defaultEdgeLength = 6
+	// maxEdgeLength keeps boards, and the traces of filling them, a
+	// manageable size.
+	maxEdgeLength = 15
+)
 
 //go:embed web
 var webFS embed.FS
@@ -48,6 +55,7 @@ func handleAlgorithms(w http.ResponseWriter, r *http.Request) {
 // parameters:
 //
 //	algorithm  ID of the algorithm to use (required)
+//	edge       edge length of the board (optional; defaultEdgeLength if omitted)
 //	seed       random seed (optional; a random one is chosen and returned if omitted)
 //
 // plus the algorithm's own parameters, which take their defaults if
@@ -68,6 +76,14 @@ func handleGenerate(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	edge := defaultEdgeLength
+	if raw := query.Get("edge"); raw != "" {
+		edge, err = strconv.Atoi(raw)
+		if err != nil || edge < 1 || edge > maxEdgeLength {
+			http.Error(w, fmt.Sprintf("edge must be a whole number from 1 to %d", maxEdgeLength), http.StatusBadRequest)
+			return
+		}
+	}
 	// Random seeds are kept to 32 bits so they're easy to note down.
 	seed := uint64(rand.Uint32())
 	if raw := query.Get("seed"); raw != "" {
@@ -78,7 +94,7 @@ func handleGenerate(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	b := board.NewHexagon(boardEdgeLength)
+	b := board.NewHexagon(edge)
 	trace := alg.Run(b, params, rand.New(rand.NewPCG(seed, 0)))
 	writeJSON(w, generateResponse{Seed: seed, Placed: len(trace.Steps), Board: b, Trace: trace})
 }

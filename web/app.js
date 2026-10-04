@@ -16,6 +16,7 @@ const darkMode = matchMedia("(prefers-color-scheme: dark)");
 const form = document.getElementById("controls");
 const algorithmSelect = document.getElementById("algorithm");
 const seedInput = document.getElementById("seed");
+const edgeInput = document.getElementById("edge");
 const paramsEl = document.getElementById("params");
 const resetButton = document.getElementById("reset");
 const statusEl = document.getElementById("status");
@@ -98,6 +99,9 @@ function drawBoard(board) {
     svgEl("rect", { width: 6, height: 6, class: "hatch-bg" }),
     svgEl("line", { x1: 1, y1: 0, x2: 1, y2: 6, class: "hatch-line" }),
   );
+  if (!view.hexes.has(view.hovered)) {
+    view.hovered = null; // the board shrank
+  }
   view.marker = svgEl("polygon", { class: "next-marker" });
   svg.replaceChildren(svgEl("defs", {}, hatch), ...polygons, view.marker);
 
@@ -390,7 +394,7 @@ function showCurrentPanel() {
 
 function query() {
   const { alg, inputs } = currentPanel();
-  const params = new URLSearchParams({ algorithm: alg.id });
+  const params = new URLSearchParams({ algorithm: alg.id, edge: edgeInput.value });
   for (const param of alg.params) {
     // The server works out parameters that are following another itself.
     const input = inputs.get(param.name);
@@ -412,7 +416,7 @@ function showStatus(data) {
     seedInput.value = data.seed;
   });
   statusEl.replaceChildren(
-    `Placed ${data.placed} obstacle${data.placed === 1 ? "" : "s"} on ${total} hexes · seed ${data.seed} `,
+    `Placed ${data.placed} obstacle${data.placed === 1 ? "" : "s"} on ${total} hex${total === 1 ? "" : "es"} · seed ${data.seed} `,
     reuse,
   );
   statusEl.classList.remove("error");
@@ -471,9 +475,14 @@ async function init() {
   }
   algorithmSelect.value = selected;
   seedInput.value = initial.get("seed") ?? "";
+  if (initial.has("edge")) {
+    edgeInput.value = initial.get("edge");
+  }
   showCurrentPanel();
   generate();
 }
+
+edgeInput.addEventListener("change", generate);
 
 algorithmSelect.addEventListener("change", () => {
   showCurrentPanel();

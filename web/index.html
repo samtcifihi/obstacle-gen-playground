@@ -16,6 +16,11 @@
             <span>Algorithm</span>
             <select id="algorithm"></select>
           </label>
+          <!-- The default and maximum match defaultEdgeLength and maxEdgeLength in server.go. -->
+          <label class="field" title="Hexes along each side of the board">
+            <span>Edge length</span>
+            <input id="edge" type="number" min="1" max="15" step="1" value="6" required>
+          </label>
           <label class="field">
             <span>Seed</span>
             <input id="seed" type="text" inputmode="numeric" pattern="[0-9]*" placeholder="random" autocomplete="off">
