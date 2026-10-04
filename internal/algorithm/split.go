@@ -10,7 +10,7 @@ import (
 
 var splitAlgorithm = Algorithm{
 	ID:   "split",
-	Name: "Split",
+	Name: "Split (mrraow)",
 	Description: "Places obstacles greedily where they best break up long clear lines across the board. Each " +
 		"round, every eligible hex scores how evenly it splits the clear line along each axis, less a penalty " +
 		"for touching obstacles, plus a little noise. Scores are rounded into buckets, and the obstacle " +

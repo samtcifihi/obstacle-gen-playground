@@ -155,7 +155,7 @@ thousands, whose density rounds down to 0), every hex keeps a finite, non-zero
 weight: with Beta(2, 2) on every axis, perimeter hexes are unlikely but
 possible.
 
-### Split
+### Split (mrraow)
 
 A greedy line-breaker, based on an existing Java generator. Each round it looks
 at every placement: one empty hex, or with `is_symmetric` (on by default) a
@@ -246,10 +246,10 @@ Parameters that are left out take their defaults.
 ```
 
 The trace has one step per choice, in order. Most steps place one obstacle at
-`placed`; Split with `is_symmetric` also lists the mirrored one in `also`. Each
-step lists the cells that could have been chosen, with one value per metric. If
-the algorithm stopped early, `trace.note` says why. `placed` at the top level
-counts obstacles, not steps.
+`placed`; Split (mrraow) with `is_symmetric` also lists the mirrored one in
+`also`. Each step lists the cells that could have been chosen, with one value
+per metric. If the algorithm stopped early, `trace.note` says why. `placed` at
+the top level counts obstacles, not steps.
 
 Cells use [axial coordinates](https://www.redblobgames.com/grids/hexagons/#coordinates-axial).
 The seed is a string because it can exceed JavaScript's safe integer range.
