@@ -20,6 +20,11 @@ being chosen, and so on) and the cell that was chosen outlined. Hover over a
 cell to see all its values. The heatmap's colours run from the step's lowest
 value to its highest. Changing a parameter keeps you on the same step.
 
+"Copy image" copies the board as shown, heatmap and all, to the clipboard as a
+PNG, in the page's current light or dark colours. Browsers only allow that on
+secure pages, which includes `localhost` but not plain HTTP from another
+machine (say, with `addr=0.0.0.0:8080`), so there it downloads the PNG instead.
+
 Parameters that take real numbers (rather than whole numbers) accept fractions
 as well as decimals: `1/2` and `0.5` are the same.
 

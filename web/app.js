@@ -26,6 +26,7 @@ const frameLabel = document.getElementById("frame-label");
 const metricSelect = document.getElementById("metric");
 const legendEl = document.getElementById("legend");
 const cellInfo = document.getElementById("cell-info");
+const copyButton = document.getElementById("copy-image");
 
 // Parameter panels by algorithm ID: { alg, element, inputs: Map(name → input) }.
 const panels = new Map();
@@ -300,6 +301,99 @@ function showResult(data) {
   drawBoard(data.board);
   setFrame(wasAtEnd ? data.trace.steps.length : view.frame);
   showStatus(data);
+  copyButton.disabled = false;
+}
+
+// Paint properties copied onto the board image, as the stylesheet doesn't
+// reach it.
+const PAINT = ["fill", "stroke", "stroke-width", "stroke-linejoin", "opacity", "fill-opacity", "stroke-opacity"];
+
+// boardImage renders the board as shown, heatmap and all, to a PNG at
+// scale times the size of its viewBox, on the page's background. The board
+// is copied before anything waits, so stepping on straight after doesn't
+// change the image.
+async function boardImage(scale = 2) {
+  const copy = svg.cloneNode(true);
+  const originals = svg.querySelectorAll("*");
+  copy.querySelectorAll("*").forEach((e, i) => {
+    const style = getComputedStyle(originals[i]);
+    for (const name of PAINT) {
+      // Computed references to the hatching are absolute, like
+      // url("http://host/?query#blocked"), but the image is its own
+      // document.
+      e.style.setProperty(name, style.getPropertyValue(name).replace(/url\(["']?[^#)]*#([^"')]+)["']?\)/, "url(#$1)"));
+    }
+  });
+  const { width, height } = svg.viewBox.baseVal;
+  copy.setAttribute("width", width * scale);
+  copy.setAttribute("height", height * scale);
+  const background = getComputedStyle(document.body).backgroundColor;
+
+  const source = new Blob([new XMLSerializer().serializeToString(copy)], { type: "image/svg+xml" });
+  const url = URL.createObjectURL(source);
+  try {
+    const image = new Image();
+    image.src = url;
+    await image.decode();
+    const canvas = el("canvas", { width: Math.round(width * scale), height: Math.round(height * scale) });
+    const context = canvas.getContext("2d");
+    context.fillStyle = background;
+    context.fillRect(0, 0, canvas.width, canvas.height);
+    context.drawImage(image, 0, 0, canvas.width, canvas.height);
+    return await new Promise((resolve, reject) => {
+      canvas.toBlob((png) => (png ? resolve(png) : reject(new Error("couldn't make the image"))), "image/png");
+    });
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
+function imageName() {
+  const at = view.frame < view.data.trace.steps.length ? `step-${view.frame + 1}` : "final";
+  return `${algorithmSelect.value}-seed-${view.data.seed}-${at}.png`;
+}
+
+async function download(png, name) {
+  const url = URL.createObjectURL(await png);
+  el("a", { href: url, download: name }).click();
+  setTimeout(() => URL.revokeObjectURL(url), 60_000);
+}
+
+let copyTimer;
+
+function copyFeedback(text) {
+  copyButton.textContent = text;
+  clearTimeout(copyTimer);
+  copyTimer = setTimeout(() => {
+    copyButton.textContent = "Copy image";
+  }, 2000);
+}
+
+// copyImage puts the board on the clipboard. Browsers only allow that on
+// secure pages (localhost counts, but not plain HTTP from another machine),
+// so failing that it downloads the image instead.
+function copyImage() {
+  if (!view.data) {
+    return;
+  }
+  const png = boardImage();
+  const name = imageName();
+  // Clipboard writes must start straight away, while the click still counts
+  // as the user's, so the item takes the image while it's still rendering.
+  const copied = window.ClipboardItem && navigator.clipboard?.write
+    ? navigator.clipboard.write([new ClipboardItem({ "image/png": png })])
+    : Promise.reject(new Error("can't write images to the clipboard"));
+  copied
+    .then(() => copyFeedback("Copied"))
+    .catch(async (err) => {
+      console.warn("Couldn't copy the board, so downloading it instead:", err);
+      await download(png, name);
+      copyFeedback("Downloaded");
+    })
+    .catch((err) => {
+      console.error("Couldn't copy or download the board:", err);
+      copyFeedback("Failed");
+    });
 }
 
 function paramInput(alg, param) {
@@ -553,6 +647,8 @@ metricSelect.addEventListener("change", () => {
   view.metric = metricSelect.value;
   showFrame();
 });
+
+copyButton.addEventListener("click", copyImage);
 
 svg.addEventListener("pointerover", (event) => {
   const key = event.target.dataset?.key;

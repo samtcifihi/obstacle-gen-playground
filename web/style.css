@@ -205,6 +205,12 @@ button:hover {
   filter: brightness(1.1);
 }
 
+button:disabled {
+  opacity: 0.5;
+  filter: none;
+  cursor: default;
+}
+
 button.secondary {
   border: 1px solid var(--border);
   background: var(--panel);
@@ -247,6 +253,11 @@ button.link {
   accent-color: var(--accent);
 }
 
+button.small {
+  padding: 6px 10px;
+  font-size: 0.875rem;
+}
+
 button.icon {
   width: 34px;
   padding: 4px 0;
@@ -267,6 +278,20 @@ button.icon {
 #frame-label {
   font-weight: 600;
   font-variant-numeric: tabular-nums;
+}
+
+.frame-tools {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  max-width: 100%;
+}
+
+/* Wide enough for its feedback, so it doesn't jump about. */
+#copy-image {
+  flex: none;
+  min-width: 7.5em;
 }
 
 .metric {

@@ -43,10 +43,13 @@
         </div>
         <div class="frame-info">
           <span id="frame-label"></span>
-          <label class="metric">
-            <span>Heatmap</span>
-            <select id="metric"></select>
-          </label>
+          <div class="frame-tools">
+            <label class="metric">
+              <span>Heatmap</span>
+              <select id="metric"></select>
+            </label>
+            <button type="button" id="copy-image" class="secondary small" title="Copy the board as shown to the clipboard, as a PNG image" disabled>Copy image</button>
+          </div>
         </div>
         <svg id="board" role="img" aria-label="Hex board"></svg>
         <div id="legend" class="legend"></div>
