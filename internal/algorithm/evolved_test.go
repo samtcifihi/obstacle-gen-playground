@@ -42,8 +42,14 @@ func TestConjugateApply(t *testing.T) {
 		{"flattened power mean", conjugate(true, "sqrt", "mean", "min", "square"), 100.0 / 36},
 		{"flattened max", conjugate(true, "identity", "max", "min", "identity"), 9},
 		{"flattened min", conjugate(true, "identity", "min", "max", "identity"), 0},
-		// Per axis: sqrt means [1 2 2], then max 2, squared.
+		// Per axis: sqrt means [1 2 2], squared [1 4 4], then max.
 		{"by axis max", conjugate(false, "sqrt", "mean", "max", "square"), 4},
+		// Per axis: squared [1 4 4], then their mean. (Taking the mean
+		// before squaring would give (5/3)² instead.)
+		{"by axis mean", conjugate(false, "sqrt", "mean", "mean", "square"), 3},
+		// Per axis: ln means [-Inf, ln 3, ln 4], exponentiated [0 3 4], then
+		// their mean.
+		{"by axis geometric means", conjugate(false, "ln", "mean", "mean", "exp"), 7.0 / 3},
 		// Per axis: means [2 5 4], then min.
 		{"by axis min", conjugate(false, "identity", "mean", "min", "identity"), 2},
 		// Per axis: geometric means [0 3 4], then mean.

@@ -53,11 +53,11 @@ func conjugateParams(term, group string) []Param {
 			Description: "The first function of the conjugate"},
 		{Name: "f_" + term + "_b", Group: group, Type: Choice, Default: "mean", Options: aggregateOptions,
 			Description: "The second function of the conjugate"},
-		{Name: "f_" + term + "_dir", Group: group, Type: Choice, Default: "mean", Options: aggregateOptions, OnlyIf: "!" + flattened,
-			Description: "Converts the 3 axes to a single number"},
 		{Name: "f_" + term + "_a'", Group: group, Type: Choice, Default: "square", Options: scalarOptions,
 			Follows:     []Follow{{Param: "f_" + term + "_a", Inverse: true}},
 			Description: "The third function of the conjugate: the inverse of the first, set automatically"},
+		{Name: "f_" + term + "_dir", Group: group, Type: Choice, Default: "mean", Options: aggregateOptions, OnlyIf: "!" + flattened,
+			Description: "Converts the 3 axes' conjugates to a single number"},
 	}
 }
 
@@ -167,12 +167,12 @@ type EvolvedConfig struct {
 //
 //	AInv(B(A(a), A(b), A(c), A(d), A(e), A(f)))
 //
-// and otherwise
+// and otherwise each axis gets its own conjugate, which Dir combines:
 //
-//	AInv(Dir(B(A(a), A(b)), B(A(c), A(d)), B(A(e), A(f))))
+//	Dir(AInv(B(A(a), A(b))), AInv(B(A(c), A(d))), AInv(B(A(e), A(f))))
 //
-// With AInv the inverse of A, this is a generalised mean: A = sqrt,
-// B = mean, AInv = square gives the power mean with exponent 1/2.
+// With AInv the inverse of A, each conjugate is a generalised mean: A =
+// sqrt, B = mean, AInv = square gives the power mean with exponent 1/2.
 type Conjugate struct {
 	Flattened bool
 	A, AInv   func(float64) float64
@@ -190,9 +190,9 @@ func (c Conjugate) Apply(s [3][2]float64) float64 {
 	}
 	perAxis := make([]float64, 0, 3)
 	for _, axis := range s {
-		perAxis = append(perAxis, c.B([]float64{c.A(axis[0]), c.A(axis[1])}))
+		perAxis = append(perAxis, c.AInv(c.B([]float64{c.A(axis[0]), c.A(axis[1])})))
 	}
-	return c.AInv(c.Dir(perAxis))
+	return c.Dir(perAxis)
 }
 
 // Evolved places obstacles on b one at a time. Each round it scores the

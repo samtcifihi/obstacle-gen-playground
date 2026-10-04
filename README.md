@@ -54,10 +54,11 @@ It stops after placing `k_obstacles` obstacles or when no cell has a score.
 
 **Conjugates.** Steps 3 and 4 reduce the six counts, `[[a, b], [c, d], [e, f]]`
 grouped by axis, to one number. Flattened, that's
-`f_a'(f_b(f_a(a), …, f_a(f)))`. Otherwise it's
-`f_a'(f_dir(f_b(f_a(a), f_a(b)), f_b(f_a(c), f_a(d)), f_b(f_a(e), f_a(f))))`.
+`f_a'(f_b(f_a(a), …, f_a(f)))`. Otherwise each axis gets its own conjugate and
+`f_dir` combines them:
+`f_dir(f_a'(f_b(f_a(a), f_a(b))), f_a'(f_b(f_a(c), f_a(d))), f_a'(f_b(f_a(e), f_a(f))))`.
 `f_a'` is always the inverse of `f_a`, so it's set automatically and only
-shown for reference. That makes the conjugate a generalised mean: the defaults
+shown for reference. That makes each conjugate a generalised mean: the defaults
 (`2 root`, `mean`, `2 ^`) give the power mean with exponent ½, and `ln`, `mean`,
 `e x ^` gives the geometric mean.
 
