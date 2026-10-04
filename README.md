@@ -111,10 +111,13 @@ Evolved's `f_a'`.
 **Distance to obstacles.** A fourth beta distribution (`k_alpha_obstacles`,
 `k_beta_obstacles`) sets how far from existing obstacles new ones like to be.
 Each round, each free hex's distance `d` is the number of cells between it and
-the nearest obstacle (0 if adjacent, the same convention as Evolved), capped at
-`visibility` V (4 here). With no obstacles yet, every hex is at V. Like the
-coordinates, it's scaled to the middle of its band, `(d + ½)/(V + 1)`, and the
-hex's weight is multiplied by the density there.
+the nearest obstacle (0 if adjacent, the same convention as Evolved). It's
+measured up to the board's span S: the longest straight line across the board,
+corner to corner through the centre, counted the same way (7 here). No two
+hexes are further apart than that, so no obstacle is ever out of range. With no
+obstacles yet, every hex is at S. Like the coordinates, `d` is scaled to the
+middle of its band, `(d + ½)/(S + 1)`, and the hex's weight is multiplied by
+the density there.
 
 - Beta(1, 1) is neutral.
 - α > β favours larger distances, spreading obstacles out.
@@ -123,7 +126,9 @@ hex's weight is multiplied by the density there.
 
 On this board, with 16 obstacles and flat positions, Beta(1, 1) leaves about 10
 pairs of adjacent obstacles per board, Beta(6, 1) about 1 and Beta(1, 6) about
-19. `is_obstacles_symmetric` (off by default) forces α = β.
+15. With that many obstacles, most distances are 0 to 2, low on the 0 to 7
+scale, so clustering shapes need a larger β to pull hard.
+`is_obstacles_symmetric` (off by default) forces α = β.
 
 It stops after placing `k_obstacles` obstacles or when no free hex has any
 weight. The heatmap's chances are exact, and it can also show each hex's

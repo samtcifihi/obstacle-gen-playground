@@ -248,14 +248,14 @@ func TestNearestObstacle(t *testing.T) {
 		{board.Hex{Q: -2, R: 0}, 1}, // one cell between it and the centre
 		{board.Hex{Q: -4, R: 4}, 3}, // a corner, 4 steps from the centre
 		{board.Hex{Q: -4, R: 0}, 3},
-		{board.Hex{Q: -9, R: 0}, 4}, // capped at visibility
+		{board.Hex{Q: -9, R: 0}, 4}, // capped at the limit
 	} {
 		if got := nearestObstacle(tt.h, obstacles, 4); got != tt.want {
 			t.Errorf("nearestObstacle(%v) = %d, want %d", tt.h, got, tt.want)
 		}
 	}
 	if got := nearestObstacle(board.Hex{}, nil, 4); got != 4 {
-		t.Errorf("with no obstacles, distance = %d, want visibility 4", got)
+		t.Errorf("with no obstacles, distance = %d, want the limit 4", got)
 	}
 }
 
@@ -284,7 +284,7 @@ func TestTripleBetaRecordsDistances(t *testing.T) {
 	var placed []board.Hex
 	for i, step := range trace.Steps {
 		for _, c := range step.Candidates {
-			if want := float64(nearestObstacle(c.Hex, placed, 4)); c.Values[distance] != want {
+			if want := float64(nearestObstacle(c.Hex, placed, 7)); c.Values[distance] != want {
 				t.Fatalf("step %d: %v recorded distance %v, want %v", i, c.Hex, c.Values[distance], want)
 			}
 		}
@@ -333,6 +333,26 @@ func TestParseObstaclesSymmetric(t *testing.T) {
 		}
 		if got := v.Float("k_beta_obstacles"); got != tt.want {
 			t.Errorf("is_obstacles_symmetric=%s: k_beta_obstacles = %v, want %v", tt.symmetric, got, tt.want)
+		}
+	}
+}
+
+func TestTripleBetaSeesAcrossTheBoard(t *testing.T) {
+	// With one obstacle in the left corner, distances run all the way to
+	// the right corner, 7 cells between, rather than stopping at 4.
+	b := board.NewHexagon(5)
+	b.Cells[b.Index()[board.Hex{Q: -4}]].Obstacle = true
+	cfg := defaultTripleBetaConfig(t)
+	cfg.Obstacles = 1
+	trace := TripleBeta(b, cfg, newRNG(1))
+	distance := metricIndex(t, trace, "distance")
+	got := make(map[board.Hex]float64)
+	for _, c := range trace.Steps[0].Candidates {
+		got[c.Hex] = c.Values[distance]
+	}
+	for h, want := range map[board.Hex]float64{{Q: -3}: 0, {Q: 0}: 3, {Q: 2}: 5, {Q: 4}: 7, {Q: 4, R: -4}: 7} {
+		if got[h] != want {
+			t.Errorf("%v has distance %v, want %v", h, got[h], want)
 		}
 	}
 }

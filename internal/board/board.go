@@ -100,3 +100,25 @@ func (b *Board) Visibility() int {
 	}
 	return visibility
 }
+
+// Span is the longest straight line across the board, counted in the cells
+// between its two ends, the same way Visibility counts. No two cells are
+// further apart than that on a hexagon, where it runs corner to corner
+// through the centre: 2 × edge length - 3 cells.
+func (b *Board) Span() int {
+	index := b.Index()
+	span := 0
+	for _, c := range b.Cells {
+		for _, dir := range (Hex{}).Neighbours() {
+			steps := 0
+			for h := c.Add(dir); ; h = h.Add(dir) {
+				if _, ok := index[h]; !ok {
+					break
+				}
+				steps++
+			}
+			span = max(span, steps-1)
+		}
+	}
+	return span
+}

@@ -104,7 +104,8 @@ type BetaShape struct {
 // TripleBeta places obstacles on b one at a time. Each cell's weight is its
 // position weight (see hexWeights), which is fixed, times its distance
 // weight, which is recalculated each round: the density of cfg.Distance at
-// the cell's distance to the nearest obstacle (see distanceWeight). Each
+// the cell's distance to the nearest obstacle, measured up to the board's
+// span, so no obstacle is ever out of range (see distanceWeight). Each
 // obstacle goes on a free cell, one without an obstacle where one wouldn't
 // make a bank bigger than MaxBank, picked with probability proportional to
 // its weight.
@@ -114,11 +115,11 @@ type BetaShape struct {
 // each cell that could have taken it with its chance, weights and distance.
 func TripleBeta(b *board.Board, cfg TripleBetaConfig, rng *rand.Rand) Trace {
 	g := grid{b: b, index: b.Index()}
-	visibility := b.Visibility()
+	span := b.Span()
 	positions := hexWeights(b, cfg.Axes)
-	distances := make([]float64, visibility+1) // distance weight by distance
+	distances := make([]float64, span+1) // distance weight by distance
 	for d := range distances {
-		distances[d] = distanceWeight(d, visibility, cfg.Distance)
+		distances[d] = distanceWeight(d, span, cfg.Distance)
 	}
 	trace := Trace{Metrics: tripleBetaMetrics}
 	notFinite := func(w float64) bool { return !isFinite(w) }
@@ -151,7 +152,7 @@ func TripleBeta(b *board.Board, cfg TripleBetaConfig, rng *rand.Rand) Trace {
 				continue
 			}
 			anyFree = true
-			d := nearestObstacle(c.Hex, obstacles, visibility)
+			d := nearestObstacle(c.Hex, obstacles, span)
 			dw := distances[d]
 			if w := positions[i] * dw; w > 0 {
 				options = append(options, option{cell: i, distance: d, distanceWeight: dw, weight: w})
@@ -188,15 +189,15 @@ var tripleBetaMetrics = []Metric{
 	{Name: "chance", Description: "Chance of getting this obstacle", Percent: true},
 	{Name: "weight", Description: "Weight (position weight × distance weight)"},
 	{Name: "position", Description: "Position weight (product of the three axis densities)"},
-	{Name: "distance", Description: "Distance to the nearest obstacle (capped at visibility)", Integer: true},
+	{Name: "distance", Description: "Distance to the nearest obstacle (the board's span if there are none)", Integer: true},
 	{Name: "distance_weight", Description: "Distance weight (density at the scaled distance)"},
 }
 
 // nearestObstacle returns the number of cells between h and the nearest of
-// obstacles, so 0 if one is adjacent, capped at visibility. With no
-// obstacles it's visibility.
-func nearestObstacle(h board.Hex, obstacles []board.Hex, visibility int) int {
-	d := visibility
+// obstacles, so 0 if one is adjacent, capped at limit. With no obstacles
+// it's limit.
+func nearestObstacle(h board.Hex, obstacles []board.Hex, limit int) int {
+	d := limit
 	for _, o := range obstacles {
 		d = min(d, h.DistanceTo(o)-1)
 	}
@@ -204,10 +205,10 @@ func nearestObstacle(h board.Hex, obstacles []board.Hex, visibility int) int {
 }
 
 // distanceWeight returns the density of shape at distance d, which runs
-// from 0 to visibility, scaled into (0, 1) as the middle of its band,
-// (d + ½)/(visibility + 1), so the density is never infinite.
-func distanceWeight(d, visibility int, shape BetaShape) float64 {
-	return betaPDF((float64(d)+0.5)/float64(visibility+1), shape.Alpha, shape.Beta)
+// from 0 to limit, scaled into (0, 1) as the middle of its band,
+// (d + ½)/(limit + 1), so the density is never infinite.
+func distanceWeight(d, limit int, shape BetaShape) float64 {
+	return betaPDF((float64(d)+0.5)/float64(limit+1), shape.Alpha, shape.Beta)
 }
 
 // hexWeights returns the weight of each cell of b: the product of the beta

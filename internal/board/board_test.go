@@ -48,6 +48,14 @@ func TestNeighbours(t *testing.T) {
 	}
 }
 
+func TestSpan(t *testing.T) {
+	for edge := 1; edge <= 6; edge++ {
+		if got, want := NewHexagon(edge).Span(), max(0, 2*edge-3); got != want {
+			t.Errorf("NewHexagon(%d).Span() = %d, want %d", edge, got, want)
+		}
+	}
+}
+
 func TestVisibility(t *testing.T) {
 	for edge := 1; edge <= 6; edge++ {
 		if got := NewHexagon(edge).Visibility(); got != edge-1 {
